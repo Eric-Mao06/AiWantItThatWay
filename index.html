@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Desktop Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="greeting">Good Evening</div>
+            <div class="close-btn">×</div>
+        </div>
+        
+        <div class="assistant-orb">
+            <div class="orb-animation"></div>
+        </div>
+
+        <div class="context-aware-section">
+            <div class="hero-text">
+                You have a meeting in 5 minutes!
+            </div>
+            
+            <div class="tab-suggestion">
+                <div class="tab-key">Tab</div>
+                <div class="suggestion-text">Join your 4:00 PM meeting with Design Team</div>
+            </div>
+        </div>
+
+        <div class="input-container hidden">
+            <input type="text" placeholder="Ask me anything..." />
+            <button class="send-btn">➤</button>
+        </div>
+
+        <div class="input-hint">
+            Press Space to ask a question
+        </div>
+    </div>
+    <script src="renderer.js"></script>
+</body>
+</html>
