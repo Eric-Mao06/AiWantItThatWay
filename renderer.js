@@ -227,7 +227,7 @@
     function endPredictionExploration() {
         if (!isInThinkingMode) return;
         
-        changeHeroTextWithFade("Found the optimal solution!");
+        // changeHeroTextWithFade("Found the optimal solution!");
         
         treeVisualization.classList.add('hidden');
         
