@@ -1,9 +1,11 @@
-const { app, BrowserWindow, screen } = require('electron');
+const { app, BrowserWindow, screen, ipcMain } = require('electron');
 const path = require('path');
 
 let win;
+let moveInterval = null;
+let currentMovementRoutine = null;
+let routineIndex = 0;
 
-console.l
 function createWindow() {
   const display = screen.getPrimaryDisplay();
   const { width, height } = display.workAreaSize;
@@ -28,7 +30,158 @@ function createWindow() {
   win.loadFile('index.html');
 }
 
-app.whenReady().then(createWindow);
+function moveWindowRandomly() {
+  if (!win) return;
+  
+  const display = screen.getPrimaryDisplay();
+  const { width, height } = display.workAreaSize;
+  
+  const [currentX, currentY] = win.getPosition();
+  
+  const newX = Math.max(0, Math.min(width - 350, Math.random() * (width - 350)));
+  const newY = Math.max(0, Math.min(height - 550, Math.random() * (height - 550)));
+  
+  animateWindowPosition(currentX, currentY, newX, newY);
+}
+
+function executeMovementRoutine() {
+  if (!win || !currentMovementRoutine || routineIndex >= currentMovementRoutine.length) {
+    routineIndex = 0;
+    if (!currentMovementRoutine) return;
+  }
+  
+  const [currentX, currentY] = win.getPosition();
+  const nextPosition = currentMovementRoutine[routineIndex];
+  
+  animateWindowPosition(currentX, currentY, nextPosition.x, nextPosition.y);
+  
+  routineIndex++;
+}
+
+function animateWindowPosition(startX, startY, endX, endY) {
+  if (animationInProgress) return;
+  
+  animationInProgress = true;
+  const duration = 1500; 
+  const framesPerSecond = 60;
+  const totalFrames = Math.floor(duration / (1000 / framesPerSecond));
+  let currentFrame = 0;
+  
+  const animationInterval = setInterval(() => {
+    currentFrame++;
+    
+    if (currentFrame > totalFrames) {
+      clearInterval(animationInterval);
+      animationInProgress = false;
+      return;
+    }
+    
+    const progress = easeInOutQuad(currentFrame / totalFrames);
+    
+    const x = startX + (endX - startX) * progress;
+    const y = startY + (endY - startY) * progress;
+    
+    win.setPosition(Math.round(x), Math.round(y));
+  }, 1000 / framesPerSecond);
+}
+
+function easeInOutQuad(t) {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+function startAutonomousMovement(interval = 3000, routine = null) {
+  stopAutonomousMovement();
+  
+  currentMovementRoutine = routine;
+  routineIndex = 0;
+  
+  const movementFunction = routine ? executeMovementRoutine : moveWindowRandomly;
+  
+  moveInterval = setInterval(movementFunction, interval);
+  movementFunction();
+}
+
+function stopAutonomousMovement() {
+  if (moveInterval) {
+    clearInterval(moveInterval);
+    moveInterval = null;
+  }
+  
+  currentMovementRoutine = null;
+  routineIndex = 0;
+}
+
+const movementRoutines = {
+  random: function() {
+    return null; 
+  },
+  
+  demo: function() {
+    const display = screen.getPrimaryDisplay();
+    const { width, height } = display.workAreaSize;
+    
+    const winWidth = 350;
+    const winHeight = 550;
+    
+    const centerX = Math.floor((width - winWidth) / 2);
+    const centerY = Math.floor((height - winHeight) / 2);
+    
+    return [
+      { x: centerX, y: centerY },
+      
+      { x: 0, y: 0 },
+      { x: width - winWidth, y: 0 },
+      { x: width - winWidth, y: height - winHeight },
+      { x: 0, y: height - winHeight },
+      
+      { x: centerX, y: centerY },
+      
+      { x: centerX, y: 0 },
+      { x: centerX + Math.floor(centerX * 0.7), y: centerY },
+      { x: centerX + Math.floor(centerX * 0.5), y: centerY - Math.floor(centerY * 0.5) },
+      { x: centerX, y: centerY - Math.floor(centerY * 0.7) },
+      { x: centerX - Math.floor(centerX * 0.5), y: centerY - Math.floor(centerY * 0.5) },
+      { x: centerX - Math.floor(centerX * 0.7), y: centerY },
+      { x: centerX - Math.floor(centerX * 0.5), y: centerY + Math.floor(centerY * 0.5) },
+      { x: centerX, y: centerY + Math.floor(centerY * 0.7) },
+      { x: centerX + Math.floor(centerX * 0.5), y: centerY + Math.floor(centerY * 0.5) },
+      
+      { x: centerX, y: centerY }
+    ];
+  }
+};
+
+app.whenReady().then(() => {
+  createWindow();
+  
+  ipcMain.on('start-movement', (event, interval, routineName) => {
+    let routine = null;
+    
+    if (routineName && movementRoutines[routineName]) {
+      routine = movementRoutines[routineName]();
+    }
+    
+    startAutonomousMovement(interval || 3000, routine);
+  });
+  
+  ipcMain.on('stop-movement', () => {
+    stopAutonomousMovement();
+  });
+  
+  ipcMain.on('toggle-movement', (event, interval, routineName) => {
+    if (moveInterval) {
+      stopAutonomousMovement();
+    } else {
+      let routine = null;
+      
+      if (routineName && movementRoutines[routineName]) {
+        routine = movementRoutines[routineName]();
+      }
+      
+      startAutonomousMovement(interval || 3000, routine);
+    }
+  });
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
