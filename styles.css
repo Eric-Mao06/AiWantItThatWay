@@ -111,7 +111,7 @@ body {
 
 .context-aware-section {
     margin: 20px 0 15px;
-    min-height: 150px;
+    min-height: 150px; /* Add minimum height to prevent container shrinking */
 }
 
 .tab-suggestion {
@@ -184,14 +184,13 @@ body {
 
 .input-container {
     display: flex;
-    align-items: center;
+    margin: 20px 0 15px;
     background: rgba(255, 255, 255, 0.08);
     border-radius: 16px;
-    padding: 0 10px;
-    margin-top: 15px;
-    transition: all 0.3s ease;
-    opacity: 0;
-    min-height: 150px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.3s ease-out;
+    animation: slideUp 0.3s ease-out;
 }
 
 .input-container.hidden {
@@ -276,6 +275,7 @@ body {
     font-size: 18px;
 }
 
+/* Prediction Exploration Animation Styles */
 .assistant-orb.fade-out,
 .tab-suggestion.fade-out,
 .input-hint.fade-out {
@@ -287,6 +287,7 @@ body {
     transform: translateY(160px);
 }
 
+/* Tree Visualization Styles */
 .tree-visualization {
     position: absolute;
     top: 0;
@@ -354,6 +355,7 @@ body {
     }
 }
 
+/* Completion effect animation */
 .completion-effect {
     position: absolute;
     top: 0;
@@ -378,18 +380,20 @@ body {
     }
 }
 
+/* Movement notification */
 .movement-notification {
     position: absolute;
     bottom: 20px;
     left: 50%;
-    transform: translateX(-50%) translateY(20px);
-    background: rgba(0, 0, 0, 0.7);
+    transform: translateX(-50%) translateY(30px);
+    background-color: rgba(0, 0, 0, 0.8);
     color: white;
     padding: 8px 16px;
     border-radius: 20px;
     font-size: 14px;
     opacity: 0;
-    transition: all 0.3s ease;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    z-index: 1000;
 }
 
 .movement-notification.show {
@@ -397,18 +401,23 @@ body {
     transform: translateX(-50%) translateY(0);
 }
 
+/* Movement menu */
 .movement-menu {
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(20, 20, 40, 0.95);
-    border-radius: 16px;
-    padding: 20px;
-    width: 250px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-    z-index: 100;
-    display: none;
+    transform: translate(-50%, -50%) scale(0.9);
+    background-color: rgba(30, 30, 30, 0.95);
+    border-radius: 12px;
+    padding: 15px;
+    min-width: 200px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .movement-menu.show {
@@ -470,10 +479,15 @@ body {
     background-color: rgba(255, 255, 255, 0.1);
 }
 
-.assistant-orb:hover {
-    transform: scale(1.05);
+/* Add a subtle hover effect to the orb to indicate it's interactive */
+.assistant-orb {
+    cursor: pointer;
 }
 
-.assistant-orb:active {
+.assistant-orb:hover .orb-animation {
+    filter: brightness(1.1);
+}
+
+.assistant-orb:active .orb-animation {
     transform: scale(0.95);
 }

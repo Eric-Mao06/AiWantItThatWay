@@ -20,13 +20,16 @@ function createWindow() {
       contextIsolation: false,
       enableRemoteModule: true
     },
-    alwaysOnTop: false,
+    alwaysOnTop: true,
     skipTaskbar: false,
     resizable: false,
     x: width - 400,
-    y: height - 650
+    y: height - 600
   });
-
+  
+  // Set the window level to 'floating' to stay above full-screen apps
+  win.setAlwaysOnTop(true, 'screen-saver', 1);
+  
   win.loadFile('index.html');
 }
 
@@ -58,6 +61,7 @@ function executeMovementRoutine() {
   routineIndex++;
 }
 
+let animationInProgress = false;
 function animateWindowPosition(startX, startY, endX, endY) {
   if (animationInProgress) return;
   
@@ -98,7 +102,6 @@ function startAutonomousMovement(interval = 3000, routine = null) {
   const movementFunction = routine ? executeMovementRoutine : moveWindowRandomly;
   
   moveInterval = setInterval(movementFunction, interval);
-  movementFunction();
 }
 
 function stopAutonomousMovement() {
@@ -106,7 +109,6 @@ function stopAutonomousMovement() {
     clearInterval(moveInterval);
     moveInterval = null;
   }
-  
   currentMovementRoutine = null;
   routineIndex = 0;
 }
