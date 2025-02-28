@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, desktopCapturer } = require('electron');
 const path = require('path');
 
 let win;
@@ -18,7 +18,8 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      enableRemoteModule: true
+      enableRemoteModule: true,
+      webSecurity: false // Allow loading local resources
     },
     alwaysOnTop: true,
     skipTaskbar: false,
@@ -155,6 +156,28 @@ const movementRoutines = {
 
 app.whenReady().then(() => {
   createWindow();
+  
+  // Add keyboard shortcut to open DevTools (Ctrl+Shift+I)
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.control && input.shift && input.key.toLowerCase() === 'i') {
+      win.webContents.openDevTools();
+      event.preventDefault();
+    }
+  });
+  
+  // Handle desktop capture request
+  ipcMain.handle('get-desktop-sources', async () => {
+    try {
+      const sources = await desktopCapturer.getSources({ 
+        types: ['screen'],
+        thumbnailSize: { width: 0, height: 0 }
+      });
+      return sources;
+    } catch (error) {
+      console.error('Error getting desktop sources:', error);
+      return [];
+    }
+  });
   
   ipcMain.on('start-movement', (event, interval, routineName) => {
     let routine = null;

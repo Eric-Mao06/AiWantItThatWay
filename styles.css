@@ -491,3 +491,95 @@ body {
 .assistant-orb:active .orb-animation {
     transform: scale(0.95);
 }
+
+/* Gemini status indicator */
+.gemini-status {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #888;
+    transition: background-color 0.3s ease;
+}
+
+.gemini-status.connected {
+    background-color: #4CAF50;
+    box-shadow: 0 0 5px #4CAF50;
+}
+
+.gemini-status.connecting {
+    background-color: #FFC107;
+    box-shadow: 0 0 5px #FFC107;
+    animation: pulse 1.5s infinite;
+}
+
+.gemini-status.error {
+    background-color: #F44336;
+    box-shadow: 0 0 5px #F44336;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
+/* Gemini response display */
+.gemini-response {
+    position: absolute;
+    bottom: 70px;
+    left: 10px;
+    right: 10px;
+    background-color: rgba(30, 30, 40, 0.95);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    padding: 10px;
+    max-height: 200px;
+    overflow-y: auto;
+    transition: all 0.3s ease;
+    opacity: 0;
+    transform: translateY(20px);
+    pointer-events: none;
+    z-index: 100;
+}
+
+.gemini-response.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: all;
+}
+
+.gemini-response-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-weight: 500;
+    color: #ccc;
+}
+
+.close-response {
+    cursor: pointer;
+    font-size: 18px;
+    color: #999;
+    transition: color 0.2s ease;
+}
+
+.close-response:hover {
+    color: #fff;
+}
+
+.gemini-response-content {
+    color: #fff;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.hidden {
+    display: none;
+}

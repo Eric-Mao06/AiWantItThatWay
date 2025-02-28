@@ -1,6 +1,9 @@
     // Wait for the DOM to be fully loaded
 document.addEventListener('DOMContentLoaded', () => {
     const { ipcRenderer } = require('electron');
+    const GeminiClient = require('./gemini-client');
+    const ScreenCapture = require('./screen-capture');
+    const config = require('./config');
     
     // Get references to DOM elements
     const container = document.querySelector('.container');
@@ -15,23 +18,202 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputHint = document.querySelector('.input-hint');
     const assistantOrb = document.querySelector('.assistant-orb');
     const treeVisualization = document.querySelector('.tree-visualization');
-
+    const geminiStatus = document.querySelector('.gemini-status');
+    const geminiResponse = document.querySelector('.gemini-response');
+    const geminiResponseContent = document.querySelector('.gemini-response-content');
+    const closeResponse = document.querySelector('.close-response');
+    
     let isMoving = false;
     let currentRoutine = 'random'; 
     
-    const routines = [
-        { name: 'random', label: 'Random Movement' },
-        { name: 'demo', label: 'Demo Routine' }
-    ];
-
-    updateGreeting();
-
-    closeBtn.addEventListener('click', () => {
-        window.close();
-    });
-
-
+    // Gemini and screen capture instances
+    let geminiClient = null;
+    let screenCapture = null;
+    let isGeminiConnected = false;
+    
+    // Initialize Gemini client and screen capture
+    const { geminiApiKey, geminiConfig, screenCapture: screenCaptureConfig } = require('./config');
+    
+    geminiClient = new GeminiClient(geminiApiKey);
+    screenCapture = new ScreenCapture(screenCaptureConfig.frameRate);
+    
+    // Function to connect to Gemini and start screen capture
+    async function connectToGemini() {
+        if (isGeminiConnected) {
+            console.log('Already connected to Gemini');
+            return;
+        }
+        
+        geminiStatus.classList.remove('connected', 'error');
+        geminiStatus.classList.add('connecting');
+        
+        try {
+            // Connect to Gemini API
+            const connected = await geminiClient.connect(geminiConfig);
+            
+            if (connected) {
+                isGeminiConnected = true;
+                geminiStatus.classList.remove('connecting', 'error');
+                geminiStatus.classList.add('connected');
+                console.log('Connected to Gemini');
+                
+                // Send initial prompt to Gemini
+                geminiClient.sendText(
+                    "You are my AI assistant that can see my screen. Please observe what I'm doing and provide short summaries of what I'm seeing. " 
+                );
+                
+                // Start screen capture
+                const captureStarted = await screenCapture.startCapture((base64Data) => {
+                    if (isGeminiConnected) {
+                        geminiClient.sendScreenCapture(base64Data);
+                    }
+                });
+                
+                if (!captureStarted) {
+                    throw new Error('Failed to start screen capture');
+                }
+                
+                // Start sending periodic prompts
+                startPeriodicPrompts();
+                
+                showTemporaryNotification('Connected to Gemini');
+            } else {
+                throw new Error('Failed to connect to Gemini');
+            }
+        } catch (error) {
+            console.error('Error connecting to Gemini:', error);
+            geminiStatus.classList.remove('connected', 'connecting');
+            geminiStatus.classList.add('error');
+            showTemporaryNotification('Failed to connect to Gemini');
+            disconnectFromGemini();
+        }
+        
+        // Set up event listeners
+        geminiClient.on('close', () => {
+            isGeminiConnected = false;
+            geminiStatus.classList.remove('connected', 'connecting');
+            geminiStatus.classList.add('error');
+            showTemporaryNotification('Disconnected from Gemini');
+        });
+        
+        geminiClient.on('error', (error) => {
+            console.error('Gemini error:', error);
+            showTemporaryNotification('Error connecting to Gemini');
+            geminiStatus.classList.remove('connected', 'connecting');
+            geminiStatus.classList.add('error');
+        });
+        
+        geminiClient.on('content', (content) => {
+            // Do not log content here since we're already logging in gemini-client.js
+            
+            // Extract text from parts for display
+            if (content && content.parts) {
+                const textParts = content.parts
+                    .filter(part => part.text)
+                    .map(part => part.text);
+                
+                if (textParts.length > 0) {
+                    const responseText = textParts.join('\n');
+                    // Don't display in UI as requested
+                    // displayGeminiResponse(responseText);
+                }
+            }
+        });
+        
+        // Add audio event handler
+        geminiClient.on('audio', (audioData) => {
+            console.log('Received audio from Gemini:', audioData.mimeType);
+            
+            // Convert base64 to ArrayBuffer
+            const binaryString = atob(audioData.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            // Create an audio context and play the audio
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Decode the audio data
+            audioContext.decodeAudioData(bytes.buffer, (buffer) => {
+                // Create a source node
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                
+                // Connect to the destination (speakers)
+                source.connect(audioContext.destination);
+                
+                // Play the audio
+                source.start(0);
+                
+                console.log('Playing audio response');
+            }, (error) => {
+                console.error('Error decoding audio data:', error);
+            });
+        });
+    }
+    
+    // Function to disconnect from Gemini and stop screen capture
+    function disconnectFromGemini() {
+        if (!isGeminiConnected) {
+            console.log('Not connected to Gemini');
+            return;
+        }
+        
+        // Stop screen capture
+        screenCapture.stopCapture();
+        
+        // Stop periodic prompts
+        if (periodicPromptInterval) {
+            clearInterval(periodicPromptInterval);
+            periodicPromptInterval = null;
+        }
+        
+        // Disconnect from Gemini
+        geminiClient.disconnect();
+        isGeminiConnected = false;
+        
+        geminiStatus.classList.remove('connected', 'connecting');
+        geminiStatus.classList.add('error');
+        
+        showTemporaryNotification('Disconnected from Gemini');
+    }
+    
+    // Variable to store the periodic prompt interval
+    let periodicPromptInterval = null;
+    
+    // Function to send periodic prompts to Gemini
+    function startPeriodicPrompts() {
+        if (periodicPromptInterval) {
+            clearInterval(periodicPromptInterval);
+        }
+        
+        // Send a prompt every 15 seconds
+        periodicPromptInterval = setInterval(() => {
+            if (isGeminiConnected) {
+                geminiClient.sendText(
+                    "Based on what you can see on my screen now, please provide a brief summary of what I'm doing. " +
+                    "If you can see the content clearly, describe what you observe."
+                );
+            }
+        }, 15000); // 15 seconds
+    }
+    
+    // Function to toggle Gemini connection
+    function toggleGeminiConnection() {
+        if (isGeminiConnected) {
+            disconnectFromGemini();
+        } else {
+            connectToGemini();
+        }
+    }
+    
+    // Add keyboard shortcut to toggle Gemini connection (Ctrl+G)
     document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'g') {
+            toggleGeminiConnection();
+        }
+        
         if (e.key === 'Tab') {
             e.preventDefault();
 
@@ -408,6 +590,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Function to display Gemini response in the UI
+    function displayGeminiResponse(text) {
+        geminiResponseContent.textContent = text;
+        geminiResponse.classList.remove('hidden');
+        geminiResponse.classList.add('visible');
+        
+        // Auto-hide after 10 seconds
+        setTimeout(() => {
+            hideGeminiResponse();
+        }, 10000);
+    }
+    
+    // Function to hide Gemini response
+    function hideGeminiResponse() {
+        geminiResponse.classList.remove('visible');
+        setTimeout(() => {
+            geminiResponse.classList.add('hidden');
+        }, 300);
+    }
+    
+    // Close response when clicking the close button
+    closeResponse.addEventListener('click', () => {
+        hideGeminiResponse();
+    });
+
     // Function to toggle movement with the current routine
     function toggleMovement() {
         isMoving = !isMoving;
@@ -439,61 +646,26 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleMovement();
     });
     
-    // Create movement routine menu
-    function createMovementMenu() {
-        const menu = document.createElement('div');
-        menu.classList.add('movement-menu');
-        
-        // Create title
-        const title = document.createElement('div');
-        title.classList.add('movement-menu-title');
-        title.textContent = 'Movement Routines';
-        menu.appendChild(title);
-        
-        // Create routine options
-        routines.forEach((routine, index) => {
-            const option = document.createElement('div');
-            option.classList.add('movement-menu-option');
-            option.innerHTML = `<span class="shortcut">Ctrl+${index + 1}</span> ${routine.label}`;
-            
-            option.addEventListener('click', () => {
-                currentRoutine = routine.name;
-                
-                // If already moving, restart with new routine
-                if (isMoving) {
-                    ipcRenderer.send('stop-movement');
-                    ipcRenderer.send('start-movement', 3000, currentRoutine);
-                }
-                
-                showTemporaryNotification(`Movement routine: ${routine.label}`);
-                menu.classList.remove('show');
-            });
-            
-            menu.appendChild(option);
-        });
-        
-        // Add close button
-        const closeButton = document.createElement('div');
-        closeButton.classList.add('movement-menu-close');
-        closeButton.textContent = '×';
-        closeButton.addEventListener('click', () => {
-            menu.classList.remove('show');
-        });
-        menu.appendChild(closeButton);
-        
-        // Add to container
-        container.appendChild(menu);
-        
-        return menu;
-    }
-    
-    // Create the movement menu
-    const movementMenu = createMovementMenu();
-    
-    assistantOrb.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        movementMenu.classList.toggle('show');
+    // Add Gemini control to the orb - shift + double click to toggle Gemini connection
+    assistantOrb.addEventListener('dblclick', (e) => {
+        if (e.shiftKey) {
+            toggleGeminiConnection();
+        }
     });
+    
+    const routines = [
+        { name: 'random', label: 'Random Movement' },
+        { name: 'demo', label: 'Demo Routine' }
+    ];
+
+    updateGreeting();
+
+    closeBtn.addEventListener('click', () => {
+        window.close();
+    });
+
+    // Initialize Gemini on startup
+    connectToGemini();
     
     function showTemporaryNotification(message) {
         const notification = document.createElement('div');
