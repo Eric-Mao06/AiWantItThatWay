@@ -9,10 +9,16 @@ const GroqClient = require('./groq-client');
 const config = require('./config');
 
 class LLMManager {
-    constructor() {
-        // Load API keys from config
-        this.openaiApiKey = config.openaiApiKey;
-        this.groqApiKey = config.groqApiKey;
+    /**
+     * Create a new LLM Manager
+     * @param {Object} options - Configuration options
+     * @param {string} options.openaiApiKey - OpenAI API key (optional if groqApiKey is provided)
+     * @param {string} options.groqApiKey - Groq API key (optional if openaiApiKey is provided)
+     */
+    constructor(options = {}) {
+        // Load API keys from options or config
+        this.openaiApiKey = options.openaiApiKey || config.openaiApiKey;
+        this.groqApiKey = options.groqApiKey || config.groqApiKey;
         
         if (!this.openaiApiKey && !this.groqApiKey) {
             throw new Error("At least one API key (OpenAI or Groq) is required. Please set API keys in your .env file.");

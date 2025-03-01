@@ -153,6 +153,65 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error decoding audio data:', error);
             });
         });
+        
+        // Add suggestion event handler
+        geminiClient.on('suggestion', (suggestionData) => {
+            console.log('Received suggestion from Gemini:', suggestionData);
+            
+            try {
+                // Update the suggestion text with the received action
+                if (suggestionData && suggestionData.action) {
+                    updateSuggestionText(suggestionData.action);
+                    
+                    // No need to store multiple suggestions - just display the most recent one
+                }
+            } catch (error) {
+                console.error('Error processing suggestion:', error);
+            }
+        });
+        
+        // Add state_updated event handler to update hero text with real context
+        geminiClient.on('state_updated', (stateData) => {
+            console.log('Received state update from Gemini');
+            
+            try {
+                // Extract relevant information from the state to display in hero text
+                let contextInfo = '';
+                
+                if (stateData && stateData.context) {
+                    // Try to extract the most relevant piece of information
+                    if (stateData.context.currentTask) {
+                        contextInfo = `Current task: ${stateData.context.currentTask}`;
+                    } else if (stateData.context.activeWindow) {
+                        contextInfo = `Working in: ${stateData.context.activeWindow}`;
+                    } else if (stateData.context.lastAction) {
+                        contextInfo = `Last action: ${stateData.context.lastAction}`;
+                    }
+                    
+                    // Update hero text if we have meaningful content
+                    if (contextInfo) {
+                        changeHeroTextWithFade(contextInfo);
+                    }
+                }
+            } catch (error) {
+                console.error('Error processing state update:', error);
+            }
+        });
+        
+        // Add context_shift event handler to highlight important context changes
+        geminiClient.on('context_shift', (contextData) => {
+            console.log('Detected context shift:', contextData);
+            
+            try {
+                if (contextData && contextData.observation) {
+                    // A context shift is important, so display it prominently
+                    const contextMessage = `Context shift: ${contextData.observation.slice(0, 50)}${contextData.observation.length > 50 ? '...' : ''}`;
+                    changeHeroTextWithFade(contextMessage);
+                }
+            } catch (error) {
+                console.error('Error processing context shift:', error);
+            }
+        });
     }
     
     // Function to disconnect from Gemini and stop screen capture
@@ -190,15 +249,30 @@ document.addEventListener('DOMContentLoaded', () => {
             clearInterval(periodicPromptInterval);
         }
         
-        // Send a prompt every 15 seconds
+        // Send a structured prompt every 10 seconds
         periodicPromptInterval = setInterval(() => {
             if (isGeminiConnected) {
                 geminiClient.sendText(
-                    "Based on what you can see on my screen now, please provide a brief summary of what I'm doing. " +
-                    "If you can see the content clearly, describe what you observe."
+                    "Analyze my screen and respond with structured JSON data about what you observe. " +
+                    "Include the following information:\n" +
+                    "1. A brief description of what I'm doing\n" +
+                    "2. Any applications you can identify\n" +
+                    "3. Any time references visible\n" +
+                    "4. Any documents or files visible\n" +
+                    "5. Any meetings or calendar events visible\n\n" +
+                    "Format your response as a JSON object with the following structure:\n" +
+                    "{\n" +
+                    "  \"description\": \"<brief description of what the user is doing>\",\n" +
+                    "  \"applications\": [\"<app1>\", \"<app2>\"],\n" +
+                    "  \"time_references\": [\"<time1>\", \"<time2>\"],\n" +
+                    "  \"documents\": [\"<doc1>\", \"<doc2>\"],\n" +
+                    "  \"meetings\": [\"<meeting1>\", \"<meeting2>\"]\n" +
+                    "}\n\n" +
+                    "Provide a complete, valid JSON object even if some fields are empty arrays. " +
+                    "Ensure the entire response is a single, well-formed JSON object."
                 );
             }
-        }, 15000); // 15 seconds
+        }, 10000); // 10 seconds
     }
     
     // Function to toggle Gemini connection
@@ -312,17 +386,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Rotate hero text messages
-    const heroMessages = [
-        "You have a meeting in 5 minutes!",
-        "Your project proposal is due today",
-        "Would you like to schedule focus time?",
-        "3 emails need your attention",
-        "Remember to take a break soon"
-    ];
-
-    let currentHeroIndex = 0;
-
     // Flag to track if we're in thinking mode
     let isInThinkingMode = false;
 
@@ -335,16 +398,9 @@ document.addEventListener('DOMContentLoaded', () => {
             heroText.style.opacity = 1;
         }, 500);
     }
-
-    function rotateHeroMessages() {
-        if (!isInThinkingMode) {
-            currentHeroIndex = (currentHeroIndex + 1) % heroMessages.length;
-            changeHeroTextWithFade(heroMessages[currentHeroIndex]);
-        }
-    }
-
-    // Rotate suggestions every 8 seconds
-    setInterval(rotateHeroMessages, 8000);
+    
+    // Initial hero text - set to blank until we get real context from Gemini
+    changeHeroTextWithFade('');
 
     // Update greeting based on time of day
     function updateGreeting() {
@@ -359,32 +415,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Rotate through different context-aware suggestions
-    const suggestions = [
-        "Join your 4:00 PM meeting with Design Team",
-        "Open the project proposal you were working on",
-        "Reply to email from Sarah about the deadline",
-        "Continue your research on AI assistants"
-    ];
+    // No need to store suggestions since we're only showing the most recent one
+    // We'll show 'No action available' until we get a real suggestion
+    const NO_ACTION_AVAILABLE = "";
 
-    let currentSuggestionIndex = 0;
-
-    function rotateSuggestions() {
+    // No need for an index anymore
+    
+    // Function to update suggestion text with animation
+    function updateSuggestionText(text) {
         // Fade out
         suggestionText.style.opacity = '0';
-
+        
         setTimeout(() => {
             // Update text
-            currentSuggestionIndex = (currentSuggestionIndex + 1) % suggestions.length;
-            suggestionText.textContent = suggestions[currentSuggestionIndex];
-
+            suggestionText.textContent = text;
+            
             // Fade in
             suggestionText.style.opacity = '1';
         }, 500);
     }
 
-    // Rotate suggestions every 10 seconds
-    setInterval(rotateSuggestions, 10000);
+    // This function is no longer needed as we're only showing the most recent suggestion
+
+    // Initialize with 'No action available'
+    updateSuggestionText(NO_ACTION_AVAILABLE);
 
     // Add a subtle transition to the suggestion text
     suggestionText.style.transition = 'opacity 0.5s ease';

@@ -14,7 +14,10 @@ class GroqClient {
             max_tokens: 1024,
             ...options
         };
-        this.client = new Groq({ apiKey });
+        this.client = new Groq({ 
+            apiKey,
+            dangerouslyAllowBrowser: true // Allow running in browser/Electron environment
+        });
         this.contextHistory = [];
     }
 

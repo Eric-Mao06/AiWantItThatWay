@@ -83,13 +83,23 @@ class MCTSNode {
 }
 
 class MCTSPredictor {
-    constructor(llmManager, config = {}) {
+    /**
+     * Create a new MCTS Predictor
+     * @param {Object} options - Options for the predictor
+     * @param {Object} options.llmManager - LLM Manager instance
+     * @param {Object} options.config - Configuration options
+     */
+    constructor({ llmManager, config = {} }) {
+        if (!llmManager) {
+            throw new Error('LLM Manager is required for MCTSPredictor');
+        }
+        
         this.llmManager = llmManager;
         this.config = {
             max_iterations: 100,
             max_simulation_depth: 3,
             exploration_weight: 1.0,
-            ...config
+            ...(config || {})
         };
     }
 
