@@ -1,0 +1,23 @@
+{
+  "name": "electron-assistant",
+  "version": "1.0.0",
+  "description": "A modern desktop assistant with beautiful UI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --debug"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "electron": "^28.0.0",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^4.0.9"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "electron": "^28.1.0",
+    "eventemitter3": "^5.0.1"
+  }
+}
