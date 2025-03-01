@@ -75,8 +75,8 @@ const mockUserData = {
 
 // Configuration for the MCTS algorithm
 const mctsConfig = {
-    max_iterations: 50,         // Number of MCTS iterations to run
-    max_simulation_depth: 5,    // Maximum depth for simulations
+    max_iterations: 5,         // Number of MCTS iterations to run
+    max_simulation_depth:2,    // Maximum depth for simulations
     exploration_weight: 1.0     // Weight for exploration term in UCB
 };
 

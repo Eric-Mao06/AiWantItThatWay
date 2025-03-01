@@ -17,6 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const suggestionText = document.querySelector('.suggestion-text');
     const inputHint = document.querySelector('.input-hint');
     const assistantOrb = document.querySelector('.assistant-orb');
+    const contextBuilding = document.querySelector('.context-building');
+    const contextSourceContainer = document.querySelector('.context-source-container');
     const treeVisualization = document.querySelector('.tree-visualization');
     const geminiStatus = document.querySelector('.gemini-status');
     const geminiResponse = document.querySelector('.gemini-response');
@@ -398,6 +400,87 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Context sources for the animation
+    const contextSources = [
+        "Reading email inbox",
+        "Checking calendar events",
+        "Analyzing recent documents",
+        "Reviewing task priorities",
+    ];
+
+    // Function to show the context building animation
+    function showContextBuilding() {
+        // Clear any existing context sources
+        contextSourceContainer.innerHTML = '';
+        
+        // Make the context building container visible
+        contextBuilding.classList.remove('hidden');
+        
+        // Pre-calculate positions for all context sources
+        const sourceHeight = 60; // Increased height to add more margin between windows
+        const totalSources = contextSources.length;
+        
+        // Pre-create all context sources at once with proper positioning
+        contextSources.forEach((source, index) => {
+            // Create a new context source element
+            const contextSource = document.createElement('div');
+            contextSource.className = 'context-source';
+            
+            // Position from bottom to top (reversed index)
+            const position = (totalSources - 1 - index) * sourceHeight;
+            contextSource.style.bottom = `${position}px`;
+            
+            // Add the loading indicator and text
+            contextSource.innerHTML = `
+                <div class="loading-indicator"></div>
+                <div class="context-source-text">${source}</div>
+            `;
+            
+            // Add it to the container
+            contextSourceContainer.appendChild(contextSource);
+        });
+        
+        // Add a small delay before adding the visible class for smooth transition
+        setTimeout(() => {
+            contextBuilding.classList.add('visible');
+        }, 50);
+        
+        // Now animate each context source with a staggered delay
+        const contextSourceElements = document.querySelectorAll('.context-source');
+        contextSourceElements.forEach((element, index) => {
+            // Use an eased timing function for more natural staggering
+            // First items appear quickly, later items have more delay between them
+            const staggerDelay = 500 + (index * index * 80);
+            
+            setTimeout(() => {
+                element.classList.add('visible');
+            }, staggerDelay);
+        });
+    }
+
+    // Function to hide the context building animation
+    function hideContextBuilding() {
+        // First remove the visible class to trigger the fade-out animation
+        contextBuilding.classList.remove('visible');
+        
+        // Get all context sources
+        const contextSourceElements = document.querySelectorAll('.context-source');
+        
+        // Remove the 'visible' class from all context sources
+        // No need to stagger this since we're handling it in the startPredictionExploration function
+        contextSourceElements.forEach(source => {
+            source.classList.remove('visible');
+        });
+        
+        // Add the hidden class after the animation completes
+        setTimeout(() => {
+            if (!contextBuilding.classList.contains('visible')) {
+                contextBuilding.classList.add('hidden');
+                contextSourceContainer.innerHTML = '';
+            }
+        }, 500);
+    }
+
     // Function to start the prediction exploration animation
     function startPredictionExploration() {
         isInThinkingMode = true;
@@ -418,24 +501,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => {
                     changeHeroTextWithFade("Analyzing possibilities...");
                     
-                    // After the hero text has changed, show the tree visualization
+                    // Show the context building animation
                     setTimeout(() => {
-                        // Generate the tree structure
-                        generateTreeStructure();
+                        showContextBuilding();
                         
-                        // After most of the tree is generated, highlight the optimal solution
+                        // After the context building animation has run for a while, show the tree visualization
                         setTimeout(() => {
-                            highlightOptimalSolution();
-                        }, 4000);
-                    }, 500);
+                            // Use a smooth transition to hide the context building animation
+                            // First fade out the context sources one by one in reverse order
+                            const contextSourceElements = document.querySelectorAll('.context-source');
+                            const sourcesArray = Array.from(contextSourceElements);
+                            
+                            // Fade out each source with a staggered delay (in order of appearance)
+                            sourcesArray.forEach((source, index) => {
+                                setTimeout(() => {
+                                    source.classList.remove('visible');
+                                    // Add additional transform for a smoother exit
+                                    source.style.transform = 'translateY(10px) scale(0.95)';
+                                }, index * 500);
+                            });
+                            
+                            // After all sources have started fading out, hide the container and show the tree
+                            setTimeout(() => {
+                                hideContextBuilding();
+                                
+                                // Wait a bit before showing the tree
+                                setTimeout(() => {
+                                    // Generate the tree structure
+                                    generateTreeStructure();
+                                    
+                                    // After most of the tree is generated, highlight the optimal solution
+                                    setTimeout(() => {
+                                        highlightOptimalSolution();
+                                    }, 3000);
+                                }, 300);
+                            }, sourcesArray.length * 120 + 200);
+                        }, 3000); // Show context building for 3 seconds
+                    }, 300);
                 }, 300);
             }, 200);
         }, 400);
 
-        // For demo purposes, automatically end the animation after 8 seconds
+        // For demo purposes, automatically end the animation after 10 seconds (extended to accommodate the new animation)
         setTimeout(() => {
             endPredictionExploration();
-        }, 8000);
+        }, 10000);
     }
 
     // Function to end the prediction exploration animation and return to original UI
@@ -443,11 +553,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // If we're not in thinking mode, no need to do anything
         if (!isInThinkingMode) return;
         
-        // Update hero text first (while it's still in the lower position)
-
+        // Hide the context building animation if it's visible
+        hideContextBuilding();
         
-        // Hide the tree visualization
-        treeVisualization.classList.add('hidden');
+        // Hide the tree visualization with opacity transition first
+        treeVisualization.style.opacity = '0';
+        
+        // After the opacity transition, add the hidden class
+        setTimeout(() => {
+            treeVisualization.classList.add('hidden');
+        }, 500);
         
         // After a brief pause, start the return animation
         setTimeout(() => {
@@ -558,6 +673,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Clear existing nodes and show container
         treeVisualization.innerHTML = '';
         treeVisualization.classList.remove('hidden');
+        
+        // Add a small delay before making it visible with opacity
+        setTimeout(() => {
+            treeVisualization.style.opacity = '1';
+        }, 100);
         
         // Configuration
         const config = {
