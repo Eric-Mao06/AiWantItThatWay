@@ -7,6 +7,7 @@
 require('dotenv').config();
 const { MCTSPredictor } = require('./mcts');
 const LLMManager = require('./llm-manager');
+const config = require('./config');
 
 // Mock user data for the demo
 const mockUserData = {
@@ -74,8 +75,8 @@ const mockUserData = {
 
 // Configuration for the MCTS algorithm
 const mctsConfig = {
-    max_iterations: 20,         // Number of MCTS iterations to run
-    max_simulation_depth: 3,    // Maximum depth for simulations
+    max_iterations: 50,         // Number of MCTS iterations to run
+    max_simulation_depth: 5,    // Maximum depth for simulations
     exploration_weight: 1.0     // Weight for exploration term in UCB
 };
 
@@ -87,17 +88,19 @@ async function runMCTSDemo() {
     console.log("MCTS Demo - Intelligent Action Prediction".padStart(50));
     console.log("=".repeat(80));
     
-    // Initialize the LLM Manager
-    const apiKey = process.env.OPENAI_API_KEY;
-    
-    if (!apiKey) {
-        console.error("Error: OPENAI_API_KEY is required. Please set it in your .env file.");
+    // Initialize the LLM Manager with Groq support
+    if (!config.groqApiKey && !config.openaiApiKey) {
+        console.error("Error: At least one API key (GROQ_API_KEY or OPENAI_API_KEY) is required. Please set it in your .env file.");
         process.exit(1);
     }
     
-    console.log("✅ Using OpenAI for predictions.");
+    if (config.groqApiKey) {
+        console.log("✅ Using Groq for faster predictions.");
+    } else {
+        console.log("✅ Using OpenAI for predictions.");
+    }
     
-    const llmManager = new LLMManager(apiKey);
+    const llmManager = new LLMManager();
     
     // Initialize the MCTS predictor
     const mctsPredictor = new MCTSPredictor(llmManager, mctsConfig);
@@ -135,9 +138,9 @@ async function runMCTSDemo() {
             
             // Display as a table
             console.table(sortedPaths.map(path => ({
-                Action: path.action,
+                Action: typeof path.action === 'string' ? path.action.replace(/^["']+|["']+$/g, '') : path.action,
                 Visits: path.visits,
-                Value: path.value.toFixed(3)
+                Value: typeof path.value === 'number' ? path.value.toFixed(3) : path.value
             })));
         } else {
             console.log("No paths explored.");

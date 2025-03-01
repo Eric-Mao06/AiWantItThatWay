@@ -5,18 +5,23 @@
  */
 
 const OpenAIClient = require('./openai-client');
+const GroqClient = require('./groq-client');
+const config = require('./config');
 
 class LLMManager {
-    constructor(apiKey) {
-        if (!apiKey) {
-            throw new Error("OpenAI API key is required. Please set OPENAI_API_KEY in your .env file.");
-        }
+    constructor() {
+        // Load API keys from config
+        this.openaiApiKey = config.openaiApiKey;
+        this.groqApiKey = config.groqApiKey;
         
-        this.apiKey = apiKey;
+        if (!this.openaiApiKey && !this.groqApiKey) {
+            throw new Error("At least one API key (OpenAI or Groq) is required. Please set API keys in your .env file.");
+        }
         
         // Create specialized LLM instances for different tasks
         this.actionGenerator = this._createLLM({
-            model: 'gpt-4o',
+            provider: 'groq', // Using Groq for faster action generation
+            model: 'llama-3.1-8b-instant',
             systemPrompt: `You are an AI assistant specialized in understanding user workflow contexts and suggesting relevant next actions.
 Your task is to analyze the user's current workflow state and generate a small set of contextually relevant, actionable next steps.
 Focus on practical, immediate actions the user can take based on their current context, including:
@@ -30,7 +35,8 @@ Provide your suggestions as a JSON array of clear, concise action descriptions.`
         });
         
         this.statePredictor = this._createLLM({
-            model: 'gpt-4o',
+            provider: 'groq', // Using Groq for faster state prediction
+            model: 'llama-3.1-8b-instant',
             systemPrompt: `You are an AI assistant specialized in predicting how a user's workflow state will change after taking a specific action.
 Your task is to analyze the current workflow state and a proposed action, then predict the resulting new state.
 Consider how the action will affect:
@@ -46,7 +52,8 @@ Return your prediction as a complete JSON object representing the new workflow s
         });
         
         this.stateEvaluator = this._createLLM({
-            model: 'gpt-4o',
+            provider: 'groq', // Using Groq for faster state evaluation
+            model: 'llama-3.1-8b-instant',
             systemPrompt: `You are an AI assistant specialized in evaluating the quality and efficiency of user workflow states.
 Your task is to analyze a workflow state and evaluate it on a scale from 0 to 1, where:
 - 0 represents a highly inefficient state with poor task progression and user satisfaction
@@ -63,7 +70,8 @@ Return only a single decimal number between 0 and 1 representing your evaluation
         });
         
         this.reasoningGenerator = this._createLLM({
-            model: 'gpt-4o',
+            provider: 'groq', // Using Groq for faster reasoning generation
+            model: 'llama-3.1-8b-instant',
             systemPrompt: `You are an AI assistant specialized in explaining decision rationales in clear, concise language.
 Your task is to explain why a particular action is recommended for a user based on their current context.
 Provide a brief, clear explanation (2-3 sentences) that highlights:
@@ -79,14 +87,35 @@ Your explanation should be informative yet concise, focusing on the most compell
     /**
      * Create a new LLM instance with the specified options
      * @param {Object} options - Options for the LLM
-     * @returns {OpenAIClient} - The LLM instance
+     * @returns {OpenAIClient|GroqClient} - The LLM instance
      * @private
      */
     _createLLM(options) {
-        const llm = new OpenAIClient(this.apiKey, options.model, {
-            temperature: options.temperature,
-            max_tokens: options.max_tokens || 1024
-        });
+        let llm;
+        
+        if (options.provider === 'groq') {
+            // Use Groq if specified and API key is available
+            if (!this.groqApiKey) {
+                console.warn('Groq API key not found, falling back to OpenAI');
+                options.provider = 'openai';
+            } else {
+                llm = new GroqClient(this.groqApiKey, options.model, {
+                    temperature: options.temperature,
+                    max_tokens: options.max_tokens || 1024
+                });
+            }
+        }
+        
+        // Default to OpenAI or fallback if Groq was requested but not available
+        if (options.provider !== 'groq' || !llm) {
+            if (!this.openaiApiKey) {
+                throw new Error('OpenAI API key is required but not found');
+            }
+            llm = new OpenAIClient(this.openaiApiKey, options.model || 'gpt-4o', {
+                temperature: options.temperature,
+                max_tokens: options.max_tokens || 1024
+            });
+        }
         
         // Set system prompt
         llm.systemPrompt = options.systemPrompt;
@@ -113,7 +142,8 @@ Example: ["Join the scheduled meeting", "Open the project document", "Message te
 
         try {
             const response = await this.actionGenerator.getCompletion(prompt, {
-                systemPrompt: this.actionGenerator.systemPrompt
+                systemPrompt: this.actionGenerator.systemPrompt,
+                useCache: true // Enable caching for action generation
             });
             
             // Parse the response to extract actions
@@ -137,11 +167,36 @@ Example: ["Join the scheduled meeting", "Open the project document", "Message te
                 }
             }
             
+            // Clean up actions to remove extra quotes
+            actions = actions.map(action => {
+                // If the action is a string and has quotes at the beginning and end, remove them
+                if (typeof action === 'string') {
+                    // Remove surrounding quotes if present
+                    return action.replace(/^["']+|["']+$/g, '');
+                }
+                return action;
+            });
+            
             return actions;
         } catch (error) {
             console.error('Error generating actions:', error);
             return [];
         }
+    }
+    
+    /**
+     * Generate candidate actions for multiple states in parallel
+     * @param {Array<Object>} states - Array of workflow states
+     * @returns {Promise<Array<Array<string>>>} - Array of candidate action arrays
+     */
+    async batchGenerateActions(states) {
+        if (!states || states.length === 0) return [];
+        
+        console.log(`Batch generating actions for ${states.length} states`);
+        
+        // Process all states in parallel
+        const actionPromises = states.map(state => this.generateActions(state));
+        return await Promise.all(actionPromises);
     }
 
     /**
@@ -160,25 +215,50 @@ ${JSON.stringify(state, null, 2)}
 Action being taken:
 ${action}
 
-Return your response as a JSON object representing the new workflow state after the action is taken.
+Your response MUST be a valid JSON object representing the new workflow state after the action is taken.
+DO NOT include any explanations, markdown formatting, or text before or after the JSON.
+Simply return a raw JSON object and nothing else.
+
 Include all relevant state fields and update them appropriately based on the action. DO NOT UPDATE THE ACTION HISTORY.
 `;
 
         try {
             const response = await this.statePredictor.getCompletion(prompt, {
-                systemPrompt: this.statePredictor.systemPrompt
+                systemPrompt: this.statePredictor.systemPrompt + "\nYou must ONLY return valid JSON without any additional text, explanations, or formatting.",
+                useCache: true, // Enable caching for state prediction
+                temperature: 0.1 // Lower temperature for more consistent JSON formatting
             });
             
             // Parse the response to extract the new state
             let new_state;
             try {
+                // First try direct parsing
                 new_state = JSON.parse(response);
             } catch (parseError) {
-                // Fallback: try to extract JSON using regex
-                const matches = response.match(/{[\s\S]*}/g);
+                console.log('Initial JSON parsing failed, trying to clean the response');
+                
+                // Try to clean the response of any non-JSON content
+                let cleanedResponse = response;
+                
+                // Remove markdown code blocks if present
+                cleanedResponse = cleanedResponse.replace(/```json\s+/g, '');
+                cleanedResponse = cleanedResponse.replace(/```\s*$/g, '');
+                
+                // Try to find JSON object pattern
+                const jsonPattern = /{[\s\S]*}/g;
+                const matches = cleanedResponse.match(jsonPattern);
+                
                 if (matches && matches.length > 0) {
-                    new_state = JSON.parse(matches[0]);
+                    try {
+                        new_state = JSON.parse(matches[0]);
+                        console.log('Successfully extracted JSON from response');
+                    } catch (innerError) {
+                        console.error('Failed to parse extracted JSON:', innerError);
+                        throw innerError; // Re-throw to be caught by outer catch
+                    }
                 } else {
+                    console.error('Could not find valid JSON in response');
+                    console.log('Response content:', response);
                     // If all parsing fails, make minimal changes to the state
                     new_state = { ...state };
                     new_state.last_action = action;
@@ -198,6 +278,24 @@ Include all relevant state fields and update them appropriately based on the act
             };
         }
     }
+    
+    /**
+     * Predict next states for multiple state-action pairs in parallel
+     * @param {Array<{state: Object, action: string}>} stateActionPairs - Array of state-action pairs
+     * @returns {Promise<Array<Object>>} - Array of predicted next states
+     */
+    async batchPredictNextStates(stateActionPairs) {
+        if (!stateActionPairs || stateActionPairs.length === 0) return [];
+        
+        console.log(`Batch predicting next states for ${stateActionPairs.length} state-action pairs`);
+        
+        // Process all predictions in parallel
+        const predictionPromises = stateActionPairs.map(({ state, action }) => 
+            this.predictNextState(state, action)
+        );
+        
+        return await Promise.all(predictionPromises);
+    }
 
     /**
      * Evaluate a state
@@ -208,7 +306,7 @@ Include all relevant state fields and update them appropriately based on the act
         const prompt = `
 Given the following workflow state, evaluate it on a scale from 0 to 1, where:
 - 0 represents a highly inefficient workflow state with poor task progression and user satisfaction
-- 1 represents an optimal workflow state with excellent task progression and user satisfaction
+- 1 represents an optimal workflow state with excellent task progression and user satisfaction. Be critical.
 
 Consider factors such as:
 - Task efficiency and progress
@@ -219,13 +317,14 @@ Consider factors such as:
 Current workflow state:
 ${JSON.stringify(state, null, 2)}
 
-Return your response as a single decimal number between 0 and 1, representing your evaluation score.
+Return your response as a single decimal number between 0 and 1, representing your evaluation score. Be 
 Example: 0.85
 `;
 
         try {
             const response = await this.stateEvaluator.getCompletion(prompt, {
-                systemPrompt: this.stateEvaluator.systemPrompt
+                systemPrompt: this.stateEvaluator.systemPrompt,
+                useCache: true // Enable caching for state evaluation
             });
             
             // Parse the response to extract the score
@@ -241,6 +340,21 @@ Example: 0.85
             console.error('Error evaluating state:', error);
             return 0.5; // Default value on error
         }
+    }
+    
+    /**
+     * Evaluate multiple states in parallel
+     * @param {Array<Object>} states - Array of states to evaluate
+     * @returns {Promise<Array<number>>} - Array of evaluation scores
+     */
+    async batchEvaluateStates(states) {
+        if (!states || states.length === 0) return [];
+        
+        console.log(`Batch evaluating ${states.length} states`);
+        
+        // Process all states in parallel
+        const evaluationPromises = states.map(state => this.evaluateState(state));
+        return await Promise.all(evaluationPromises);
     }
 
     /**

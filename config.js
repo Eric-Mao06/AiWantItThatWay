@@ -44,5 +44,25 @@ module.exports = {
     screenCapture: {
         frameRate: 1.0, // Frames per second (increased from 0.5)
         quality: 0.9    // JPEG quality (0-1) (increased from 0.8)
+    },
+    
+    // OpenAI API key from environment variable
+    openaiApiKey: process.env.OPENAI_API_KEY || '',
+    
+    // OpenAI configuration
+    openaiConfig: {
+        model: 'gpt-4o',
+        temperature: 0.7,
+        max_tokens: 1024
+    },
+    
+    // Groq API key from environment variable
+    groqApiKey: process.env.GROQ_API_KEY || '',
+    
+    // Groq configuration
+    groqConfig: {
+        model: 'llama-3.1-8b-instant', // You can also use 'mixtral-8x7b-32768' or other Groq models
+        temperature: 0.5,
+        max_tokens: 1024
     }
 };

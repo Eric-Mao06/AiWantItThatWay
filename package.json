@@ -19,6 +19,8 @@
     "dotenv": "^16.4.7",
     "electron": "^28.1.0",
     "eventemitter3": "^5.0.1",
+    "groq": "^3.77.2",
+    "groq-sdk": "^0.15.0",
     "openai": "^4.86.1"
   }
 }

@@ -116,27 +116,44 @@ class MCTSPredictor {
         root.untried_actions = await this._get_candidate_actions(initial_state);
         console.log(`Generated ${root.untried_actions.length} candidate actions:`, root.untried_actions);
 
-        // Run MCTS for specified number of iterations
-        for (let i = 0; i < this.config.max_iterations; i++) {
-            // Selection phase
-            let node = this._select(root);
+        // Batch size for parallel processing
+        const batchSize = 5; // Process 5 iterations in parallel
+        const totalIterations = this.config.max_iterations;
+        
+        // Run MCTS in batches for better parallelization
+        for (let batchStart = 0; batchStart < totalIterations; batchStart += batchSize) {
+            const batchEnd = Math.min(batchStart + batchSize, totalIterations);
+            const batchPromises = [];
             
-            // Expansion phase
-            if (!node.is_terminal() && !node.is_fully_expanded()) {
-                node = await this._expand(node);
-                console.log(`Iteration ${i+1}: Expanded with action: "${node.action}" at depth ${this._get_depth(node.state)}`);
+            console.log(`Processing batch ${batchStart/batchSize + 1}: iterations ${batchStart+1}-${batchEnd}`);
+            
+            // Create a batch of iteration promises
+            for (let i = batchStart; i < batchEnd; i++) {
+                batchPromises.push((async () => {
+                    // Selection phase
+                    let node = this._select(root);
+                    
+                    // Expansion phase
+                    if (!node.is_terminal() && !node.is_fully_expanded()) {
+                        node = await this._expand(node);
+                        console.log(`Iteration ${i+1}: Expanded with action: "${node.action}" at depth ${this._get_depth(node.state)}`);
+                    }
+                    
+                    // Simulation phase
+                    const value = await this._simulate(node);
+                    
+                    // Backpropagation phase
+                    this._backpropagate(node, value);
+                    
+                    return { iteration: i+1, value };
+                })());
             }
             
-            // Simulation phase
-            const value = await this._simulate(node);
+            // Wait for all iterations in the batch to complete
+            const results = await Promise.all(batchPromises);
             
-            // Backpropagation phase
-            this._backpropagate(node, value);
-            
-            // Log progress for every 10 iterations
-            if ((i + 1) % 10 === 0) {
-                console.log(`Completed ${i + 1}/${this.config.max_iterations} iterations`);
-            }
+            // Log batch completion
+            console.log(`Completed batch ${batchStart/batchSize + 1} (iterations ${batchStart+1}-${batchEnd})`);
         }
 
         // Find the best child of the root node
@@ -162,17 +179,47 @@ class MCTSPredictor {
             confidence
         );
         
+        // Consolidate actions with the same name for the exploredPaths output
+        const actionMap = new Map();
+        
+        root.children.forEach(child => {
+            const cleanAction = typeof child.action === 'string' ? 
+                child.action.replace(/^["']+|["']+$/g, '') : child.action;
+                
+            if (actionMap.has(cleanAction)) {
+                // If this action already exists, update its visits and value
+                const existing = actionMap.get(cleanAction);
+                existing.visits += child.visits;
+                // Average the values weighted by visits
+                existing.value = ((existing.value * existing.originalVisits) + 
+                                 (child.average_value * child.visits)) / 
+                                 (existing.originalVisits + child.visits);
+                existing.originalVisits += child.visits;
+            } else {
+                // Otherwise add it to the map
+                actionMap.set(cleanAction, {
+                    action: cleanAction,
+                    visits: child.visits,
+                    value: child.average_value,
+                    originalVisits: child.visits
+                });
+            }
+        });
+        
+        // Convert the map values to an array and format values as strings
+        const consolidatedPaths = Array.from(actionMap.values()).map(item => ({
+            action: item.action,
+            visits: item.visits,
+            value: item.value.toFixed(3)
+        }));
+        
         return {
-            action: best_child.action,
+            action: best_child.action.replace(/^["']+|["']+$/g, ''), // Clean up quotes in the best action
             state: best_child.state,
             value: best_child.average_value,
             confidence,
             reasoning,
-            exploredPaths: root.children.map(child => ({
-                action: child.action,
-                visits: child.visits,
-                value: child.average_value
-            }))
+            exploredPaths: consolidatedPaths
         };
     }
 
@@ -205,7 +252,12 @@ class MCTSPredictor {
         }
         
         // Choose a random untried action
-        const action = node.untried_actions[Math.floor(Math.random() * node.untried_actions.length)];
+        let action = node.untried_actions[Math.floor(Math.random() * node.untried_actions.length)];
+        
+        // Clean up action string to remove extra quotes
+        if (typeof action === 'string') {
+            action = action.replace(/^["']+|["']+$/g, '');
+        }
         
         // Log current state depth before prediction
         const currentDepth = this._get_depth(node.state);
@@ -227,6 +279,67 @@ class MCTSPredictor {
         // Add child node
         return node.add_child(next_state, action);
     }
+    
+    /**
+     * Batch expansion of multiple nodes
+     * @param {Array<MCTSNode>} nodes - Nodes to expand
+     * @returns {Promise<Array<MCTSNode>>} - Expanded child nodes
+     */
+    async _expandBatch(nodes) {
+        if (!nodes || nodes.length === 0) return [];
+        
+        // First, ensure all nodes have their untried_actions initialized
+        const nodesToInitialize = nodes.filter(node => node.untried_actions === null);
+        
+        if (nodesToInitialize.length > 0) {
+            // Get all the states that need actions
+            const states = nodesToInitialize.map(node => node.state);
+            
+            // Batch generate actions for all states
+            const actionsBatch = await this.llmManager.batchGenerateActions(states);
+            
+            // Assign the generated actions to each node
+            nodesToInitialize.forEach((node, index) => {
+                node.untried_actions = actionsBatch[index];
+            });
+        }
+        
+        // Filter out nodes with no untried actions
+        const expandableNodes = nodes.filter(node => 
+            node.untried_actions && node.untried_actions.length > 0);
+        
+        if (expandableNodes.length === 0) return nodes;
+        
+        // For each node, choose a random untried action
+        const stateActionPairs = expandableNodes.map(node => {
+            const action = node.untried_actions[Math.floor(Math.random() * node.untried_actions.length)];
+            return { node, state: node.state, action };
+        });
+        
+        // Batch predict next states
+        const nextStates = await this.llmManager.batchPredictNextStates(
+            stateActionPairs.map(({ state, action }) => ({ state, action }))
+        );
+        
+        // Create child nodes
+        const childNodes = [];
+        
+        stateActionPairs.forEach(({ node, action }, index) => {
+            const next_state = nextStates[index];
+            
+            // Check if we've reached max depth
+            if (this._get_relative_depth(next_state) >= this.config.max_simulation_depth) {
+                next_state.is_terminal = true;
+                console.log(`Reached max depth ${this.config.max_simulation_depth} with action: "${action}"`);
+            }
+            
+            // Add child node
+            const childNode = node.add_child(next_state, action);
+            childNodes.push(childNode);
+        });
+        
+        return childNodes;
+    }
 
     /**
      * Simulation phase: simulate from a node to estimate value
@@ -247,32 +360,61 @@ class MCTSPredictor {
         }
         
         // Simulate until terminal state or max depth
-        while (!current_state.is_terminal && depth < this.config.max_simulation_depth) {
+        const maxSteps = this.config.max_simulation_depth - depth;
+        const simulationSteps = [];
+        
+        // Pre-plan simulation steps (up to max depth) to enable parallel processing
+        for (let step = 0; step < maxSteps; step++) {
+            simulationSteps.push({
+                state: step === 0 ? current_state : null,
+                action: null,
+                depth: depth + step
+            });
+        }
+        
+        // Execute simulation steps with parallel API calls where possible
+        for (let i = 0; i < simulationSteps.length; i++) {
+            const step = simulationSteps[i];
+            
+            if (i > 0) {
+                step.state = simulationSteps[i-1].nextState;
+            }
+            
+            if (!step.state || step.state.is_terminal) {
+                simulationSteps.length = i; // Truncate remaining steps
+                break;
+            }
+            
             // Get possible actions
-            const actions = await this._get_candidate_actions(current_state);
+            const actions = await this._get_candidate_actions(step.state);
             
             if (actions.length === 0) {
-                console.log(`No actions available at depth ${depth}`);
+                console.log(`No actions available at depth ${step.depth}`);
+                simulationSteps.length = i + 1; // Include current step but truncate remaining
                 break;
             }
             
             // Choose random action
-            const action = actions[Math.floor(Math.random() * actions.length)];
-            console.log(`Simulation step: Trying action: "${action}" at depth ${depth}`);
+            step.action = actions[Math.floor(Math.random() * actions.length)];
+            console.log(`Simulation step: Trying action: "${step.action}" at depth ${step.depth}`);
             
             // Predict next state
-            current_state = await this._predict_next_state(current_state, action);
-            depth = this._get_depth(current_state);
+            step.nextState = await this._predict_next_state(step.state, step.action);
             
             // Set terminal if max depth reached
-            if (depth >= this.config.max_simulation_depth) {
-                current_state.is_terminal = true;
+            if (step.depth + 1 >= this.config.max_simulation_depth) {
+                step.nextState.is_terminal = true;
             }
         }
         
+        // Get the final state from the last simulation step
+        const finalState = simulationSteps.length > 0 
+            ? simulationSteps[simulationSteps.length - 1].nextState || simulationSteps[simulationSteps.length - 1].state
+            : current_state;
+        
         // Evaluate final state
-        const finalValue = await this._evaluate_state(current_state);
-        console.log(`Final simulation value: ${finalValue.toFixed(3)} at depth ${depth}`);
+        const finalValue = await this._evaluate_state(finalState);
+        console.log(`Final simulation value: ${finalValue.toFixed(3)} at depth ${this._get_depth(finalState)}`);
         return finalValue;
     }
 
@@ -343,6 +485,15 @@ class MCTSPredictor {
     async _get_candidate_actions(state) {
         return await this.llmManager.generateActions(state);
     }
+    
+    /**
+     * Get candidate actions for multiple states in parallel
+     * @param {Array<Object>} states - Array of states
+     * @returns {Promise<Array<Array<string>>>} - Array of candidate action arrays
+     */
+    async _get_batch_candidate_actions(states) {
+        return await this.llmManager.batchGenerateActions(states);
+    }
 
     /**
      * Predict the next state given current state and action using LLM
@@ -374,6 +525,32 @@ class MCTSPredictor {
         
         return new_state;
     }
+    
+    /**
+     * Predict next states for multiple state-action pairs in parallel
+     * @param {Array<{state: Object, action: string}>} stateActionPairs - Array of state-action pairs
+     * @returns {Promise<Array<Object>>} - Array of predicted next states
+     */
+    async _predict_batch_next_states(stateActionPairs) {
+        const results = await this.llmManager.batchPredictNextStates(stateActionPairs);
+        
+        // Process each result to ensure action history and last_action are properly set
+        return results.map((new_state, index) => {
+            const { state, action } = stateActionPairs[index];
+            
+            // Ensure action history is updated
+            if (!new_state.action_history) {
+                new_state.action_history = [...(state.action_history || []), action];
+            } else if (!new_state.action_history.includes(action)) {
+                new_state.action_history.push(action);
+            }
+            
+            // Ensure last_action is set
+            new_state.last_action = action;
+            
+            return new_state;
+        });
+    }
 
     /**
      * Evaluate a state using LLM
@@ -382,6 +559,15 @@ class MCTSPredictor {
      */
     async _evaluate_state(state) {
         return await this.llmManager.evaluateState(state);
+    }
+    
+    /**
+     * Evaluate multiple states in parallel
+     * @param {Array<Object>} states - Array of states to evaluate
+     * @returns {Promise<Array<number>>} - Array of evaluation scores
+     */
+    async _evaluate_batch_states(states) {
+        return await this.llmManager.batchEvaluateStates(states);
     }
 
     /**
