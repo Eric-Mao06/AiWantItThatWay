@@ -78,6 +78,13 @@ class QuickPathPredictor {
                 confidence
             );
             
+            // Generate hero text (shorter version for UI)
+            const heroText = await this.llmManager.generateHeroText(
+                state,
+                bestAction.action,
+                confidence
+            );
+            
             console.log(`Quick Path: Selected best action "${bestAction.action}" with confidence ${confidence}/10`);
             
             return {
@@ -85,6 +92,7 @@ class QuickPathPredictor {
                 state: bestAction.state,
                 confidence,
                 reasoning,
+                heroText,
                 exploredPaths: evaluatedActions.map(item => ({
                     action: item.action,
                     value: item.score.toFixed(3)

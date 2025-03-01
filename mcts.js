@@ -189,6 +189,13 @@ class MCTSPredictor {
             confidence
         );
         
+        // Generate hero text (shorter version for UI)
+        const heroText = await this.llmManager.generateHeroText(
+            initial_state, 
+            best_child.action,
+            confidence
+        );
+        
         // Consolidate actions with the same name for the exploredPaths output
         const actionMap = new Map();
         
@@ -229,6 +236,7 @@ class MCTSPredictor {
             value: best_child.average_value,
             confidence,
             reasoning,
+            heroText,
             exploredPaths: consolidatedPaths
         };
     }

@@ -397,6 +397,40 @@ Provide a brief, clear explanation (2-3 sentences) of why this action is the bes
     }
 
     /**
+     * Generate a short hero text for displaying with the suggestion
+     * @param {Object} initial_state - Initial workflow state
+     * @param {string} action - Recommended action
+     * @param {number} confidence - Confidence rating
+     * @returns {Promise<string>} - Short hero text
+     */
+    async generateHeroText(initial_state, action, confidence) {
+        const prompt = `
+Based on the following workflow state and recommended action, provide a VERY concise justification (max 10 words).
+
+Initial workflow state:
+${JSON.stringify(initial_state, null, 2)}
+
+Recommended action:
+${action}
+
+Confidence rating: ${confidence}/10
+
+Respond with a single very short phrase (maximum 10 words) that explains why this action makes sense now. 
+This will be displayed in a small space, so brevity is crucial. Focus on the most immediate reason only.
+`;
+
+        try {
+            const response = await this.reasoningGenerator.getCompletion(prompt, {
+                systemPrompt: "You are an AI assistant that provides extremely concise justifications for suggested actions. Keep responses under 10 words and focus on the most relevant context."
+            });
+            return response.trim();
+        } catch (error) {
+            console.error('Error generating hero text:', error);
+            return `I think this would help now.`;
+        }
+    }
+
+    /**
      * Clear context for all LLM instances
      */
     clearAllContexts() {

@@ -35,7 +35,7 @@ class GeminiClient {
         
         // Default configuration
         this.config = {
-            suggestionInterval: 30000,  // Generate suggestions every 30 seconds by default
+            suggestionInterval: 10000,  // Generate suggestions every 30 seconds by default
             performanceMode: 'balanced', // Performance mode for inference controller
             ...config
         };
@@ -375,7 +375,7 @@ class GeminiClient {
                         detected_elements: {
                             applications: Array.isArray(parsed.applications) ? [...parsed.applications] : [],
                             time_references: Array.isArray(parsed.time_references) ? [...parsed.time_references] : [],
-                            actions: [],
+                            actions: Array.isArray(parsed.actions) ? [...parsed.actions] : [],
                             meetings: Array.isArray(parsed.meetings) ? [...parsed.meetings] : [],
                             documents: Array.isArray(parsed.documents) ? [...parsed.documents] : []
                         }
@@ -453,6 +453,10 @@ class GeminiClient {
                     
                     if (Array.isArray(parsed.meetings)) {
                         event.detected_elements.meetings = [...parsed.meetings];
+                    }
+                    
+                    if (Array.isArray(parsed.actions)) {
+                        event.detected_elements.actions = [...parsed.actions];
                     }
                     
                     // Successfully parsed JSON, return the event

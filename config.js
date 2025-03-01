@@ -64,5 +64,13 @@ module.exports = {
         model: 'llama-3.1-8b-instant', // You can also use 'mixtral-8x7b-32768' or other Groq models
         temperature: 0.5,
         max_tokens: 1024
+    },
+    
+    // State history settings
+    stateHistory: {
+        recentActionsLimit: 5,       // Number of recent actions to keep
+        actionHistoryLimit: 10,       // Max number of actions in full history
+        actionHistoryToSend: 10,      // Number of action history items to include in model prompts
+        eventHistoryLimit: 5          // Number of raw events to keep
     }
 };

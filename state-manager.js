@@ -3,8 +3,15 @@
  * Handles workflow state management, historical profiles, and context analysis
  */
 
+const config = require('./config');
+
 class StateManager {
-    constructor() {
+    constructor(options = {}) {
+        // Get history limits from config or options
+        this.recentActionsLimit = options.recentActionsLimit || config.stateHistory.recentActionsLimit || 10;
+        this.actionHistoryLimit = options.actionHistoryLimit || config.stateHistory.actionHistoryLimit || 50;
+        this.actionHistoryToSend = options.actionHistoryToSend || config.stateHistory.actionHistoryToSend || 20;
+        this.eventHistoryLimit = options.eventHistoryLimit || config.stateHistory.eventHistoryLimit || 5;
         // Initialize state structure
         this.currentState = {
             timestamp: Date.now(),
@@ -21,7 +28,7 @@ class StateManager {
         
         // Historical data
         this.eventHistory = [];         // Rolling window of recent events
-        this.maxEventHistory = 20;      // Store the last 20 events
+        this.maxEventHistory = this.eventHistoryLimit; // Store limited number of events
         this.eventFrequency = {};       // Track frequency of event types
         this.lastContextShift = null;   // Timestamp of last significant context change
         
@@ -56,8 +63,49 @@ class StateManager {
             
             // Assume the first detected app is the active window
             if (event.detected_elements.applications[0]) {
-                this.currentState.screen_content.active_window = event.detected_elements.applications[0];
-                console.log('Updated active window to:', this.currentState.screen_content.active_window);
+                const newActiveWindow = event.detected_elements.applications[0];
+                
+                // Check if active window has changed
+                if (this.currentState.screen_content.active_window !== newActiveWindow) {
+                    const previousWindow = this.currentState.screen_content.active_window;
+                    this.currentState.screen_content.active_window = newActiveWindow;
+                    console.log('Updated active window to:', this.currentState.screen_content.active_window);
+                    
+                    // Create a derived action for app switching
+                    if (previousWindow) {
+                        const appSwitchAction = {
+                            timestamp: event.timestamp,
+                            action_type: 'app_switch',
+                            description: `Switched from ${previousWindow} to ${newActiveWindow}`,
+                            context: {
+                                app: newActiveWindow,
+                                previous_app: previousWindow,
+                                document: event.detected_elements.documents.length > 0 ? 
+                                         event.detected_elements.documents[0] : null
+                            },
+                            confidence: 0.9,
+                            derived: true // Mark this as a derived action
+                        };
+                        
+                        // Add to recent_actions
+                        this.currentState.recent_actions = [
+                            appSwitchAction,
+                            ...this.currentState.recent_actions
+                        ].slice(0, this.recentActionsLimit);
+                        
+                        // Add to action_history (with limit)
+                        this.currentState.action_history.push(appSwitchAction);
+                        
+                        // Trim action_history if it exceeds the limit
+                        if (this.currentState.action_history.length > this.actionHistoryLimit) {
+                            this.currentState.action_history = this.currentState.action_history.slice(
+                                this.currentState.action_history.length - this.actionHistoryLimit
+                            );
+                        }
+                        
+                        console.log('Added derived app switch action:', appSwitchAction);
+                    }
+                }
             }
         }
         
@@ -89,6 +137,48 @@ class StateManager {
                 ...this.currentState.upcoming_events,
                 ...meetingsWithTime.filter(m => !this.currentState.upcoming_events.some(e => e.title === m.title))
             ];
+        }
+        
+        // Process actions
+        if (event.detected_elements.actions && event.detected_elements.actions.length > 0) {
+            console.log('Detected actions:', event.detected_elements.actions);
+            
+            // Process each action
+            const actionEntries = event.detected_elements.actions.map(action => {
+                return {
+                    timestamp: event.timestamp,
+                    action_type: this._inferActionType(action),
+                    description: action,
+                    context: {
+                        app: this.currentState.screen_content.active_window,
+                        document: event.detected_elements.documents.length > 0 ? 
+                                 event.detected_elements.documents[0] : null
+                    },
+                    confidence: 0.8 // Default confidence for explicitly detected actions
+                };
+            });
+            
+            // Add to recent_actions with configurable limit
+            this.currentState.recent_actions = [
+                ...actionEntries,
+                ...this.currentState.recent_actions
+            ].slice(0, this.recentActionsLimit);
+            
+            // Add to full action_history
+            this.currentState.action_history = [
+                ...this.currentState.action_history,
+                ...actionEntries
+            ];
+            
+            // Trim action_history if it exceeds the limit
+            if (this.currentState.action_history.length > this.actionHistoryLimit) {
+                this.currentState.action_history = this.currentState.action_history.slice(
+                    this.currentState.action_history.length - this.actionHistoryLimit
+                );
+            }
+            
+            console.log('Updated action history. Current length:', this.currentState.action_history.length);
+            console.log('Recent actions:', JSON.stringify(this.currentState.recent_actions, null, 2));
         }
         
         // Add to event history
@@ -132,6 +222,34 @@ class StateManager {
     }
     
     /**
+     * Infer the action type from an action description
+     * @private
+     * @param {string} actionDescription - The description of the action
+     * @returns {string} - The inferred action type
+     */
+    _inferActionType(actionDescription) {
+        const description = actionDescription.toLowerCase();
+        
+        // Pattern matching for common action types
+        if (description.includes('typing') || description.includes('writing')) {
+            return 'typing';
+        } else if (description.includes('reading') || description.includes('viewing')) {
+            return 'reading';
+        } else if (description.includes('switch') || description.includes('opening')) {
+            return 'app_switch';
+        } else if (description.includes('editing') || description.includes('modifying')) {
+            return 'editing';
+        } else if (description.includes('meeting') || description.includes('call')) {
+            return 'meeting';
+        } else if (description.includes('scrolling') || description.includes('browsing')) {
+            return 'browsing';
+        } else {
+            // Default to 'other' if no pattern matches
+            return 'other';
+        }
+    }
+    
+    /**
      * Update frequency counts for different event types
      * @private
      */
@@ -145,6 +263,13 @@ class StateManager {
         // Update meeting reference frequency
         event.detected_elements.meetings.forEach(meeting => {
             const key = `meeting:${meeting.toLowerCase()}`;
+            this.eventFrequency[key] = (this.eventFrequency[key] || 0) + 1;
+        });
+        
+        // Update action frequency
+        event.detected_elements.actions.forEach(action => {
+            const actionType = this._inferActionType(action);
+            const key = `action:${actionType}`;
             this.eventFrequency[key] = (this.eventFrequency[key] || 0) + 1;
         });
         
@@ -232,13 +357,22 @@ class StateManager {
      * @returns {Object} - Enhanced state object with historical context
      */
     getEnhancedState() {
+        // Create a copy of the current state
+        const enhancedState = { ...this.currentState };
+        
+        // Limit action_history in the returned state to conserve context window
+        if (enhancedState.action_history && enhancedState.action_history.length > this.actionHistoryToSend) {
+            enhancedState.action_history = enhancedState.action_history.slice(-this.actionHistoryToSend);
+        }
+        
         return {
-            ...this.currentState,
+            ...enhancedState,
             
             // Add relevant historical context
             historical_context: {
                 frequent_apps: this._getTopFrequentItems('app:', 3),
                 frequent_meetings: this._getTopFrequentItems('meeting:', 3),
+                frequent_actions: this._getTopFrequentItems('action:', 3),
                 feedback_stats: this.feedbackStats
             }
         };

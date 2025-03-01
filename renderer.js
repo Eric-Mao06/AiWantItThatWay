@@ -163,6 +163,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (suggestionData && suggestionData.action) {
                     updateSuggestionText(suggestionData.action);
                     
+                    // Update the hero text with the short hero text if available
+                    if (suggestionData.heroText) {
+                        changeHeroTextWithFade(suggestionData.heroText);
+                    } else if (suggestionData.reasoning) {
+                        // Fallback to reasoning for backward compatibility
+                        changeHeroTextWithFade(suggestionData.reasoning);
+                    }
+                    
                     // No need to store multiple suggestions - just display the most recent one
                 }
             } catch (error) {
@@ -252,21 +260,25 @@ document.addEventListener('DOMContentLoaded', () => {
         // Send a structured prompt every 10 seconds
         periodicPromptInterval = setInterval(() => {
             if (isGeminiConnected) {
+                const currentTime = new Date().toLocaleString();
                 geminiClient.sendText(
                     "Analyze my screen and respond with structured JSON data about what you observe. " +
+                    "The current time is " + currentTime + ". " +
                     "Include the following information:\n" +
                     "1. A brief description of what I'm doing\n" +
                     "2. Any applications you can identify\n" +
                     "3. Any time references visible\n" +
                     "4. Any documents or files visible\n" +
-                    "5. Any meetings or calendar events visible\n\n" +
+                    "5. Any meetings or calendar events visible\n" +
+                    "6. Any specific actions I appear to be taking (like typing, reading, switching apps)\n\n" +
                     "Format your response as a JSON object with the following structure:\n" +
                     "{\n" +
                     "  \"description\": \"<brief description of what the user is doing>\",\n" +
                     "  \"applications\": [\"<app1>\", \"<app2>\"],\n" +
                     "  \"time_references\": [\"<time1>\", \"<time2>\"],\n" +
                     "  \"documents\": [\"<doc1>\", \"<doc2>\"],\n" +
-                    "  \"meetings\": [\"<meeting1>\", \"<meeting2>\"]\n" +
+                    "  \"meetings\": [\"<meeting1>\", \"<meeting2>\"],\n" +
+                    "  \"actions\": [\"<action1>\", \"<action2>\"]\n" +
                     "}\n\n" +
                     "Provide a complete, valid JSON object even if some fields are empty arrays. " +
                     "Ensure the entire response is a single, well-formed JSON object."
