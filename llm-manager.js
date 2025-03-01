@@ -136,14 +136,14 @@ Your explanation should be informative yet concise, focusing on the most compell
      */
     async generateActions(state) {
         const prompt = `
-Given the following user workflow state, suggest 3-5 contextually relevant next actions the user might take.
+Given the following user workflow state, suggest 3-5 contextually relevant next actions the user might take. IF NOT PROVIDED IN THE STATE, DO NOT IMPLY THAT IT EXISTS.
+
 Only provide actions that are directly actionable by the user.
 
 Current workflow state:
 ${JSON.stringify(state, null, 2)}
 
 Return your response as a JSON array of strings, each representing a possible next action.
-Example: ["Join the scheduled meeting", "Open the project document", "Message team member"]
 `;
 
         try {
@@ -156,21 +156,100 @@ Example: ["Join the scheduled meeting", "Open the project document", "Message te
             let actions;
             try {
                 actions = JSON.parse(response);
+                console.log('Successfully parsed actions JSON directly');
                 if (!Array.isArray(actions)) {
-                    throw new Error('Response is not an array');
+                    console.log('Response is not an array, but is valid JSON. Trying to extract array...');
+                    // If the response is a JSON object with an array property, use that
+                    const possibleArrays = Object.values(actions).filter(val => Array.isArray(val));
+                    if (possibleArrays.length > 0) {
+                        actions = possibleArrays[0];
+                        console.log('Found array in JSON object');
+                    } else {
+                        throw new Error('Response is not an array and no array property found');
+                    }
                 }
             } catch (parseError) {
-                // Fallback: try to extract actions using regex if JSON parsing fails
-                const matches = response.match(/\[".*?"\]/g);
-                if (matches && matches.length > 0) {
-                    actions = JSON.parse(matches[0]);
+                console.log('Initial JSON parsing failed, trying to clean the response');
+                
+                // Clean the response
+                let cleanedResponse = response;
+                
+                // Remove markdown code blocks if present
+                cleanedResponse = cleanedResponse.replace(/```json\s+/g, '');
+                cleanedResponse = cleanedResponse.replace(/```\s*/g, '');
+                cleanedResponse = cleanedResponse.replace(/```javascript\s+/g, '');
+                
+                // Try to find an array pattern
+                const arrayPattern = /\[\s*"[^\]]*\]/g;
+                const arrayMatches = cleanedResponse.match(arrayPattern);
+                
+                if (arrayMatches && arrayMatches.length > 0) {
+                    try {
+                        // Fix common JSON syntax errors
+                        let potentialArray = arrayMatches[0];
+                        potentialArray = potentialArray.replace(/'/g, '"'); // Replace single quotes with double quotes
+                        potentialArray = potentialArray.replace(/,\s*(\])/g, '$1'); // Remove trailing commas
+                        
+                        actions = JSON.parse(potentialArray);
+                        console.log('Successfully extracted and fixed JSON array from response');
+                    } catch (innerError) {
+                        console.log('Failed to parse extracted array JSON, trying regex approach');
+                        // Fallback: try to extract actions using regex if JSON parsing fails
+                        const matches = cleanedResponse.match(/\[".*?"\]/g) || cleanedResponse.match(/\[[^\]]+\]/g);
+                        if (matches && matches.length > 0) {
+                            try {
+                                actions = JSON.parse(matches[0]);
+                                console.log('Successfully parsed array using regex');
+                            } catch (regexError) {
+                                console.log('Regex JSON parsing failed, trying line-by-line approach');
+                                // Second fallback: split by newlines and look for action-like lines
+                                actions = cleanedResponse.split('\n')
+                                    .filter(line => {
+                                        const trimmed = line.trim();
+                                        return trimmed.startsWith('"') || 
+                                               trimmed.startsWith('-') || 
+                                               trimmed.startsWith('*') || 
+                                               /^\d+\./.test(trimmed);
+                                    })
+                                    .map(line => line.replace(/^["\-*\d\.]+\s*/, '').replace(/["',]+$/, '').trim())
+                                    .filter(line => line.length > 0);
+                                console.log('Extracted actions line by line:', actions);
+                            }
+                        } else {
+                            // Last resort: split by newlines and look for action-like lines
+                            actions = cleanedResponse.split('\n')
+                                .filter(line => {
+                                    const trimmed = line.trim();
+                                    return trimmed.startsWith('"') || 
+                                           trimmed.startsWith('-') || 
+                                           trimmed.startsWith('*') || 
+                                           /^\d+\./.test(trimmed);
+                                })
+                                .map(line => line.replace(/^["\-*\d\.]+\s*/, '').replace(/["',]+$/, '').trim())
+                                .filter(line => line.length > 0);
+                            console.log('Extracted actions by lines (last resort):', actions);
+                        }
+                    }
                 } else {
+                    console.log('No array pattern found, falling back to line-by-line extraction');
                     // Second fallback: split by newlines and look for action-like lines
-                    actions = response.split('\n')
-                        .filter(line => line.trim().startsWith('"') || line.trim().startsWith('-'))
-                        .map(line => line.replace(/^["-]\s*/, '').replace(/",$/, '').trim())
+                    actions = cleanedResponse.split('\n')
+                        .filter(line => {
+                            const trimmed = line.trim();
+                            return trimmed.startsWith('"') || 
+                                   trimmed.startsWith('-') || 
+                                   trimmed.startsWith('*') || 
+                                   /^\d+\./.test(trimmed);
+                        })
+                        .map(line => line.replace(/^["\-*\d\.]+\s*/, '').replace(/["',]+$/, '').trim())
                         .filter(line => line.length > 0);
+                    console.log('Extracted actions by lines:', actions);
                 }
+            }
+            
+            if (!actions || actions.length === 0) {
+                console.log('No actions extracted, using default actions');
+                actions = ['Check your schedule', 'Open a document', 'Take a break'];
             }
             
             // Clean up actions to remove extra quotes
@@ -240,6 +319,7 @@ Include all relevant state fields and update them appropriately based on the act
             try {
                 // First try direct parsing
                 new_state = JSON.parse(response);
+                console.log('Successfully parsed JSON directly');
             } catch (parseError) {
                 console.log('Initial JSON parsing failed, trying to clean the response');
                 
@@ -248,27 +328,57 @@ Include all relevant state fields and update them appropriately based on the act
                 
                 // Remove markdown code blocks if present
                 cleanedResponse = cleanedResponse.replace(/```json\s+/g, '');
-                cleanedResponse = cleanedResponse.replace(/```\s*$/g, '');
+                cleanedResponse = cleanedResponse.replace(/```\s*/g, '');
+                cleanedResponse = cleanedResponse.replace(/```javascript\s+/g, '');
                 
-                // Try to find JSON object pattern
-                const jsonPattern = /{[\s\S]*}/g;
-                const matches = cleanedResponse.match(jsonPattern);
+                // Remove any text before the first '{' and after the last '}'
+                const firstBrace = cleanedResponse.indexOf('{');
+                const lastBrace = cleanedResponse.lastIndexOf('}');
                 
-                if (matches && matches.length > 0) {
-                    try {
-                        new_state = JSON.parse(matches[0]);
-                        console.log('Successfully extracted JSON from response');
-                    } catch (innerError) {
-                        console.error('Failed to parse extracted JSON:', innerError);
-                        throw innerError; // Re-throw to be caught by outer catch
+                if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                    cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1);
+                }
+                
+                // Replace any trailing commas before closing brackets (common JSON error)
+                cleanedResponse = cleanedResponse.replace(/,\s*(\}|\])/g, '$1');
+                
+                // Try to parse the cleaned response
+                try {
+                    new_state = JSON.parse(cleanedResponse);
+                    console.log('Successfully parsed cleaned JSON');
+                } catch (cleanError) {
+                    console.log('Cleaned JSON parsing failed, trying to extract JSON object');
+                    
+                    // Try to find JSON object pattern
+                    const jsonPattern = /{[\s\S]*}/g;
+                    const matches = cleanedResponse.match(jsonPattern);
+                    
+                    if (matches && matches.length > 0) {
+                        try {
+                            // Try to fix common JSON syntax errors
+                            let potentialJson = matches[0];
+                            potentialJson = potentialJson.replace(/([{,])\s*([a-zA-Z0-9_$]+)\s*:/g, '$1"$2":'); // Add quotes to unquoted keys
+                            potentialJson = potentialJson.replace(/:\s*'([^']*)'/g, ':"$1"'); // Replace single quotes with double quotes
+                            
+                            new_state = JSON.parse(potentialJson);
+                            console.log('Successfully extracted and fixed JSON from response');
+                        } catch (innerError) {
+                            console.error('Failed to parse extracted JSON:', innerError);
+                            console.log('Attempted to parse:', matches[0]);
+                            
+                            // If all parsing fails, make minimal changes to the state
+                            new_state = { ...state };
+                            new_state.last_action = action;
+                            new_state.action_history = [...(state.action_history || []), action];
+                        }
+                    } else {
+                        console.error('Could not find valid JSON in response');
+                        console.log('Response content:', response);
+                        // If all parsing fails, make minimal changes to the state
+                        new_state = { ...state };
+                        new_state.last_action = action;
+                        new_state.action_history = [...(state.action_history || []), action];
                     }
-                } else {
-                    console.error('Could not find valid JSON in response');
-                    console.log('Response content:', response);
-                    // If all parsing fails, make minimal changes to the state
-                    new_state = { ...state };
-                    new_state.last_action = action;
-                    new_state.action_history = [...(state.action_history || []), action];
                 }
             }
             
