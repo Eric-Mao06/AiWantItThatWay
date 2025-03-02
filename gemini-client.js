@@ -35,7 +35,7 @@ class GeminiClient {
         
         // Default configuration
         this.config = {
-            suggestionInterval: 10000,  // Generate suggestions every 30 seconds by default
+            suggestionInterval: 20000,  // Generate suggestions every 30 seconds by default
             performanceMode: 'balanced', // Performance mode for inference controller
             ...config
         };

@@ -16,6 +16,9 @@ class LLMManager {
      * @param {string} options.groqApiKey - Groq API key (optional if openaiApiKey is provided)
      */
     constructor(options = {}) {
+        // Store configuration settings
+        this.config = config;
+        
         // Load API keys from options or config
         this.openaiApiKey = options.openaiApiKey || config.openaiApiKey;
         this.groqApiKey = options.groqApiKey || config.groqApiKey;
@@ -136,8 +139,11 @@ Your explanation should be informative yet concise, focusing on the most compell
      */
     async generateActions(state) {
         const prompt = `
-Given the following user workflow state, suggest 3-5 contextually relevant next actions the user might take.
-Only provide actions that are directly actionable by the user.
+Given the following user workflow state, suggest 3-5 contextually relevant next actions the user might take. BE CREATIVE AND HOW YOU CAN FURTHER THE USER'S INTENT.
+Only provide actions that are directly actionable by the user. PRIORITIZE RECENT ACTIONS BY THE USER WHEN DETERMINING. Understand what the user is doing NOW and what they are thinking. Then, provide a suggestion of what to do next. The suggestion will be suggested to the user and if accepted, will be autonously completed by an AI.
+
+DO NOT IMPLY ANYTHING BEYOND THE SCOPE OF THE STATE. Additionally, do not RELY on a single state for your action suggestions. They should be specifc, macro-level suggestions that work because of the user's GENERAL intent. The suggestion (which will be completed autonomously by an AI ) should be helpful to the user.
+Provide your suggestions as a JSON array of clear, concise action descriptions.
 
 Current workflow state:
 ${JSON.stringify(state, null, 2)}
@@ -145,6 +151,8 @@ ${JSON.stringify(state, null, 2)}
 Return your response as a JSON array of strings, each representing a possible next action.
 Example: ["Join the scheduled meeting", "Open the project document", "Message team member"]
 `;
+console.log("dickheaddd");
+console.log(`${JSON.stringify(state, null, 2)}`);
 
         try {
             const response = await this.actionGenerator.getCompletion(prompt, {
@@ -269,6 +277,30 @@ Include all relevant state fields and update them appropriately based on the act
                     new_state = { ...state };
                     new_state.last_action = action;
                     new_state.action_history = [...(state.action_history || []), action];
+                }
+            }
+            
+            // Sanitize action history to ensure it only contains strings
+            if (new_state.action_history) {
+                if (Array.isArray(new_state.action_history)) {
+                    // Convert any non-string items to strings and filter out invalid entries
+                    new_state.action_history = new_state.action_history
+                        .map(item => typeof item === 'string' ? item : 
+                             (typeof item === 'object' ? JSON.stringify(item) : String(item)))
+                        .filter(item => 
+                            typeof item === 'string' && 
+                            !item.includes('examining') && 
+                            !item.includes('console') &&
+                            item.length < 100); // Prevent extremely long actions
+                } else {
+                    // If action_history is not an array, initialize it as an empty array
+                    new_state.action_history = [];
+                }
+                
+                // Limit the size to match configuration (default to 10 if not specified)
+                const maxHistorySize = this.config?.history?.actionHistoryLimit || 10;
+                if (new_state.action_history.length > maxHistorySize) {
+                    new_state.action_history = new_state.action_history.slice(-maxHistorySize);
                 }
             }
             

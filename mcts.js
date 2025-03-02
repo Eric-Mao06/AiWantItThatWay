@@ -279,14 +279,14 @@ class MCTSPredictor {
         
         // Log current state depth before prediction
         const currentDepth = this._get_depth(node.state);
-        console.log(`Before prediction - Current depth: ${currentDepth}, Action history: [${node.state.action_history?.join(', ')}]`);
+        console.log(`Before prediction - Current depth: ${currentDepth}, Action history length: ${node.state.action_history?.length || 0}`);
         
         // Use LLM to predict the next state
         const next_state = await this._predict_next_state(node.state, action);
         
         // Log next state depth after prediction
         const nextDepth = this._get_depth(next_state);
-        console.log(`After prediction - Next depth: ${nextDepth}, Action history: [${next_state.action_history?.join(', ')}]`);
+        console.log(`After prediction - Next depth: ${nextDepth}, Action history length: ${next_state.action_history?.length || 0}`);
         
         // Check if we've reached max depth
         if (this._get_relative_depth(next_state) >= this.config.max_simulation_depth) {
@@ -525,15 +525,30 @@ class MCTSPredictor {
         
         const new_state = await this.llmManager.predictNextState(state, action);
 
-        console.log(`LLM returned state with action history: [${new_state.action_history?.join(', ')}]`);
+        // Log the action history type and length for debugging
+        if (new_state.action_history) {
+            console.log(`LLM returned state with action history, type: ${Array.isArray(new_state.action_history) ? 'Array' : typeof new_state.action_history}, length: ${Array.isArray(new_state.action_history) ? new_state.action_history.length : 'N/A'}`);
+            
+            // Ensure action_history only contains strings
+            if (Array.isArray(new_state.action_history)) {
+                new_state.action_history = new_state.action_history
+                    .map(item => typeof item === 'string' ? item : JSON.stringify(item))
+                    .filter(item => typeof item === 'string' && !item.includes('examining') && !item.includes('console'));
+            } else {
+                // If action_history is not an array, reset it
+                new_state.action_history = [];
+            }
+        } else {
+            console.log(`LLM returned state without action history`);
+        }
         
         // Ensure action history is updated
         if (!new_state.action_history) {
             new_state.action_history = [...(state.action_history || []), action];
-            console.log(`Created new action history: [${new_state.action_history.join(', ')}]`);
+            console.log(`Created new action history with length: ${new_state.action_history.length}`);
         } else if (!new_state.action_history.includes(action)) {
             new_state.action_history.push(action);
-            console.log(`Added action to existing history: [${new_state.action_history.join(', ')}]`);
+            console.log(`Added action to existing history, new length: ${new_state.action_history.length}`);
         } else {
             console.log(`Action already in history, no change needed`);
         }

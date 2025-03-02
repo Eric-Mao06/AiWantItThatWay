@@ -42,8 +42,8 @@ module.exports = {
     
     // Screen capture settings
     screenCapture: {
-        frameRate: 1.0, // Frames per second (increased from 0.5)
-        quality: 0.9    // JPEG quality (0-1) (increased from 0.8)
+        frameRate: 2.0, // Frames per second (increased from 0.5)
+        quality: 1    // JPEG quality (0-1) (increased from 0.8)
     },
     
     // OpenAI API key from environment variable
@@ -68,9 +68,9 @@ module.exports = {
     
     // State history settings
     stateHistory: {
-        recentActionsLimit: 5,       // Number of recent actions to keep
+        recentActionsLimit: 1,       // Number of recent actions to keep
         actionHistoryLimit: 10,       // Max number of actions in full history
-        actionHistoryToSend: 10,      // Number of action history items to include in model prompts
+        actionHistoryToSend: 1,      // Number of action history items to include in model prompts
         eventHistoryLimit: 5          // Number of raw events to keep
     }
 };

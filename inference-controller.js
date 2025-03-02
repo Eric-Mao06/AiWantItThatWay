@@ -30,8 +30,8 @@ class InferenceController {
             performanceMode: 'balanced',    // Options: 'performance', 'quality', 'balanced'
             complexityThreshold: 0.6,       // Threshold for state complexity
             mctsConfig: {                   // Configuration for MCTS
-                max_iterations: 5,         // Default iterations
-                max_simulation_depth: 3,    // Default simulation depth
+                max_iterations: 25,         // Default iterations
+                max_simulation_depth: 4,    // Default simulation depth
                 exploration_weight: 1.0     // Default exploration weight
             },
             quickPathConfig: {              // Configuration for quick path

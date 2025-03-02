@@ -264,16 +264,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 geminiClient.sendText(
                     "Analyze my screen and respond with structured JSON data about what you observe. " +
                     "The current time is " + currentTime + ". " +
+                    "BE INCREDIBLY DESCRIPTIVE. Someone who is blind should be able to recreate the exact flow and intent. " +
+                    "Note that the Purple rectangle is not a slack notification and is YOU. REMOVE ANY MENTION OF THE NOTIFICATION AND THIS PURPLE RECTANGLE. THE RECTANGLE IS NOT THERE. You are an agent that provides real-time assistance to the user by watching the screen and describing what is occuring." +
                     "Include the following information:\n" +
-                    "1. A brief description of what I'm doing\n" +
+                    "1. A description of what I'm doing. Think hard and understand the user deeply. Explain the flow, their intent, and be INCREDIBLY DESCRIPTIVE.\n" +
                     "2. Any applications you can identify\n" +
                     "3. Any time references visible\n" +
-                    "4. Any documents or files visible\n" +
+                    "4. Any documents or files visible (FOCUS ONLY ON THE MAIN SCREENS, DO NOT IMPLY OTHER SCREENS)\n" +
                     "5. Any meetings or calendar events visible\n" +
-                    "6. Any specific actions I appear to be taking (like typing, reading, switching apps)\n\n" +
+                    "6. Any specific actions I appear to be taking (like typing, reading, switching apps). Read the screen carefully and imply INCREDIBLY DESCRIPTIVE intent.  Someone who is blind should be able to recreate the exact flow and intent. EACH DESCRIPTION SHOULD BE 3-4 SENTENCES LONG.\n\n" +
                     "Format your response as a JSON object with the following structure:\n" +
                     "{\n" +
-                    "  \"description\": \"<brief description of what the user is doing>\",\n" +
+                    "  \"description\": \"<Description of what the user is doing. Think hard and understand the user deeply. Explain the flow, their intent, and be INCREDIBLY DESCRIPTIVE. Think hard and understand the user deeply. Explain the flow, their intent, and be descriptive.>\",\n" +
                     "  \"applications\": [\"<app1>\", \"<app2>\"],\n" +
                     "  \"time_references\": [\"<time1>\", \"<time2>\"],\n" +
                     "  \"documents\": [\"<doc1>\", \"<doc2>\"],\n" +
@@ -284,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     "Ensure the entire response is a single, well-formed JSON object."
                 );
             }
-        }, 10000); // 10 seconds
+        }, 5000); // 10 seconds
     }
     
     // Function to toggle Gemini connection
