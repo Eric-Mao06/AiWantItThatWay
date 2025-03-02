@@ -161,14 +161,20 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 // Update the suggestion text with the received action
                 if (suggestionData && suggestionData.action) {
+                    // Store the most recent suggestion for later use when exiting thinking mode
+                    geminiClient.lastSuggestion = suggestionData;
+                    
                     updateSuggestionText(suggestionData.action);
                     
-                    // Update the hero text with the short hero text if available
-                    if (suggestionData.heroText) {
-                        changeHeroTextWithFade(suggestionData.heroText);
-                    } else if (suggestionData.reasoning) {
-                        // Fallback to reasoning for backward compatibility
-                        changeHeroTextWithFade(suggestionData.reasoning);
+                    // Only update the hero text if not in thinking mode
+                    if (!isInThinkingMode) {
+                        // Update the hero text with the short hero text if available
+                        if (suggestionData.heroText) {
+                            changeHeroTextWithFade(suggestionData.heroText);
+                        } else if (suggestionData.reasoning) {
+                            // Fallback to reasoning for backward compatibility
+                            changeHeroTextWithFade(suggestionData.reasoning);
+                        }
                     }
                     
                     // No need to store multiple suggestions - just display the most recent one
@@ -183,6 +189,9 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Received state update from Gemini');
             
             try {
+                // Store the most recent state data
+                geminiClient.lastStateData = stateData;
+                
                 // Extract relevant information from the state to display in hero text
                 let contextInfo = '';
                 
@@ -196,8 +205,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         contextInfo = `Last action: ${stateData.context.lastAction}`;
                     }
                     
-                    // Update hero text if we have meaningful content
+                    // Store the formatted context info for later use
                     if (contextInfo) {
+                        geminiClient.lastContextInfo = contextInfo;
+                    }
+                    
+                    // Only update hero text if not in thinking mode and we have meaningful content
+                    if (contextInfo && !isInThinkingMode) {
                         changeHeroTextWithFade(contextInfo);
                     }
                 }
@@ -648,10 +662,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Reset hero text to original after all animations complete
                     setTimeout(() => {
-                        // Get a random hero message
-                        const randomMessage = heroMessages[Math.floor(Math.random() * heroMessages.length)];
-                        changeHeroTextWithFade(randomMessage);
+                        // First set thinking mode to false to allow new messages to come through
                         isInThinkingMode = false;
+                        
+                        // Priority order: 1) Latest suggestion, 2) Latest context, 3) Random message
+                        if (geminiClient && geminiClient.lastSuggestion && geminiClient.lastSuggestion.heroText) {
+                            // Priority 1: Use the latest suggestion hero text
+                            changeHeroTextWithFade(geminiClient.lastSuggestion.heroText);
+                        } else if (geminiClient && geminiClient.lastContextInfo) {
+                            // Priority 2: Use the latest context information
+                            changeHeroTextWithFade(geminiClient.lastContextInfo);
+                        } else {
+                            // Priority 3: Fallback to a random hero message if nothing else is available
+                            const randomMessage = heroMessages[Math.floor(Math.random() * heroMessages.length)];
+                            changeHeroTextWithFade(randomMessage);
+                        }
+                        
+                        // Request a fresh suggestion to improve responsiveness
+                        if (geminiClient && typeof geminiClient.requestSuggestionUpdate === 'function') {
+                            geminiClient.requestSuggestionUpdate();
+                        }
                     }, 500);
                 }, 200);
             }, 300);
